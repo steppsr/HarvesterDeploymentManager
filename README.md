@@ -15,20 +15,22 @@ Deploy [Chia](https://www.chia.net/) harvester upgrades from a **Windows 11** co
 
 ## Requirements
 
-| Component | Version |
-|-----------|---------|
-| Controller OS | Windows 10/11 (developed on Windows 11) |
-| Python | 3.11+ |
-| Harvesters | Ubuntu with Chia installed at `~/chia-blockchain` |
-| Network | LAN; SSH port 22 (default) |
-| Auth | SSH key (passwordless login recommended) |
+
+| Component     | Version                                           |
+| ------------- | ------------------------------------------------- |
+| Controller OS | Windows 10/11 (developed on Windows 11)           |
+| Python        | 3.11+                                             |
+| Harvesters    | Ubuntu with Chia installed at `~/chia-blockchain` |
+| Network       | LAN; SSH port 22 (default)                        |
+| Auth          | SSH key (passwordless login recommended)          |
+
 
 ## Download and install
 
 ### 1. Clone the repository
 
 ```powershell
-git clone https://github.com/YOUR_GITHUB_USERNAME/HarvesterDeploymentTool.git
+git clone https://github.com/steppsr/HarvesterDeploymentTool.git
 cd HarvesterDeploymentTool
 ```
 
@@ -102,12 +104,14 @@ copy config\harvesters.example.yaml config\harvesters.yaml
 
 Set under `defaults` (or per host):
 
-| Field | Description |
-|-------|-------------|
-| `ssh_user` | Linux user (e.g. `steve`) |
-| `ssh_key_path` | Private key path (e.g. `~/.ssh/id_ed25519`) |
-| `chia_root` | Chia repo on harvester (usually `~/chia-blockchain`) |
-| `git_branch` | Release branch (usually `latest`) |
+
+| Field          | Description                                          |
+| -------------- | ---------------------------------------------------- |
+| `ssh_user`     | Linux user (e.g. `steve`)                            |
+| `ssh_key_path` | Private key path (e.g. `~/.ssh/id_ed25519`)          |
+| `chia_root`    | Chia repo on harvester (usually `~/chia-blockchain`) |
+| `git_branch`   | Release branch (usually `latest`)                    |
+
 
 Per harvester, set `id`, `display_name`, `host` (hostname or IP), and `last_known_version` for your records.
 
@@ -188,3 +192,4 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 ## Further reading
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — phases, recipe steps, security notes
+
