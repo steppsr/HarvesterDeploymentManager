@@ -1,0 +1,25 @@
+# Deployment recipe — mirrors How to Upgrade Chia.md
+name: chia-upgrade-default
+description: Git-based Chia upgrade on harvester (stop, update, install, start)
+
+steps:
+  - id: precheck
+    description: Verify chia root and git repository
+  - id: backup_config
+    description: Backup config.yaml before upgrade
+  - id: stop_services
+    description: Stop Chia services
+  - id: remove_venvs
+    description: Remove old virtual environments
+  - id: git_update
+    description: Fetch and checkout latest release branch
+  - id: git_clean_check
+    description: Reset submodules, remove untracked files, verify clean tree
+  - id: install
+    description: Run install.sh (may take several minutes)
+  - id: chia_init
+    description: Initialize upgraded Chia; run --fix-ssl-permissions if SSL warnings appear
+  - id: start_harvester
+    description: Start harvester service
+  - id: postcheck
+    description: Verify chia version after upgrade

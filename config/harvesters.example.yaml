@@ -1,0 +1,41 @@
+# Copy to harvesters.yaml and adjust ssh_key_path for your Windows machine.
+defaults:
+  ssh_port: 22
+  ssh_user: YOUR_LINUX_USER
+  ssh_key_path: ~/.ssh/id_ed25519
+  chia_root: ~/chia-blockchain
+  activate_cmd: ". ./activate"
+  git_branch: latest
+  upgrade_mode: git
+  enabled: true
+
+harvesters:
+  - id: tarkin
+    display_name: TARKIN
+    host: tarkin
+    last_known_version: "2.7.0"
+
+  - id: kinnakeet
+    display_name: KINNAKEET
+    host: kinnakeet
+    last_known_version: "2.7.0"
+
+  - id: vader
+    display_name: VADER
+    host: vader
+    last_known_version: "2.7.0"
+
+  - id: lando
+    display_name: LANDO
+    host: lando
+    last_known_version: "2.7.0"
+
+  - id: wedge
+    display_name: WEDGE
+    host: wedge
+    last_known_version: "2.7.0"
+
+  - id: padme
+    display_name: PADME
+    host: padme
+    last_known_version: "2.7.0"

@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+deployments/
+.pytest_cache/
+
+# Local inventory (hostnames, IPs, keys paths) — use harvesters.example.yaml
+config/harvesters.yaml
