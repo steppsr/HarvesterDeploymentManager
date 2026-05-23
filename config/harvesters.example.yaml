@@ -1,41 +1,63 @@
-# Copy to harvesters.yaml and adjust ssh_key_path for your Windows machine.
+# Copy to harvesters.yaml and adjust for your environment.
+# Each entry is a deploy "node" — dedicated harvester or a farmer machine (e.g. JABBA).
 defaults:
   ssh_port: 22
   ssh_user: YOUR_LINUX_USER
   ssh_key_path: ~/.ssh/id_ed25519
   chia_root: ~/chia-blockchain
+  chia_config_dir: ~/.chia/mainnet/config
   activate_cmd: ". ./activate"
   git_branch: latest
   upgrade_mode: git
   enabled: true
+  role: harvester
 
 harvesters:
   - id: tarkin
     display_name: TARKIN
     host: tarkin
-    last_known_version: "2.7.0"
+    role: harvester
+    farmer_host: jabba
+    last_known_version: "2.7.1"
 
   - id: kinnakeet
     display_name: KINNAKEET
     host: kinnakeet
-    last_known_version: "2.7.0"
+    role: harvester
+    farmer_host: jabba
+    last_known_version: "2.7.1"
 
   - id: vader
     display_name: VADER
     host: vader
-    last_known_version: "2.7.0"
+    role: harvester
+    farmer_host: jabba
+    last_known_version: "2.7.1"
 
   - id: lando
     display_name: LANDO
     host: lando
-    last_known_version: "2.7.0"
+    role: harvester
+    farmer_host: jabba
+    last_known_version: "2.7.1"
 
   - id: wedge
     display_name: WEDGE
     host: wedge
-    last_known_version: "2.7.0"
+    role: harvester
+    farmer_host: jabba
+    last_known_version: "2.7.1"
 
   - id: padme
     display_name: PADME
     host: padme
-    last_known_version: "2.7.0"
+    role: harvester
+    farmer_host: jabba
+    last_known_version: "2.7.1"
+
+  # Farmer / full node — uses chia start farmer instead of chia start harvester
+  - id: jabba
+    display_name: JABBA
+    host: jabba
+    role: farmer
+    last_known_version: "2.7.1"

@@ -8,10 +8,12 @@ A modular, **Python-centric controller** on Windows 11 orchestrates **agentless 
 
 ## Goals
 
-| Phase | Goal |
-|-------|------|
+
+| Phase       | Goal                                                                                                                    |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
 | **Phase 1** | From Windows: SSH to one or all harvesters, run the upgrade pipeline, stream progress, report per-host success/failure. |
-| **Phase 2** | GUI: manage harvester inventory, deploy one or all, separate live monitor per harvester, deployment history. |
+| **Phase 2** | GUI: manage harvester inventory, deploy one or all, separate live monitor per harvester, deployment history.            |
+
 
 **Scale today:** 6 harvesters (see [Inventory](#harvester-inventory)). Design for adding hosts without code changes.
 
@@ -46,14 +48,16 @@ A modular, **Python-centric controller** on Windows 11 orchestrates **agentless 
 
 ### Layered modules (Phase 1 = library; Phase 2 = GUI on top)
 
-| Layer | Responsibility |
-|-------|----------------|
-| **CLI / GUI** | User commands, layout, buttons |
-| **Orchestrator** | Run jobs on one or many hosts; concurrency limit; cancel where possible |
-| **Deployment engine** | Execute recipe steps; emit events |
-| **SSH transport** | Connect, exec, stream output, optional SFTP |
-| **Domain** | `Harvester`, `DeployJob`, `Step`, `JobState`, events |
-| **Persistence** | Inventory (YAML); history (SQLite in Phase 2) |
+
+| Layer                 | Responsibility                                                          |
+| --------------------- | ----------------------------------------------------------------------- |
+| **CLI / GUI**         | User commands, layout, buttons                                          |
+| **Orchestrator**      | Run jobs on one or many hosts; concurrency limit; cancel where possible |
+| **Deployment engine** | Execute recipe steps; emit events                                       |
+| **SSH transport**     | Connect, exec, stream output, optional SFTP                             |
+| **Domain**            | `Harvester`, `DeployJob`, `Step`, `JobState`, events                    |
+| **Persistence**       | Inventory (YAML); history (SQLite in Phase 2)                           |
+
 
 Phase 1 must be implemented as **library + thin CLI**, not a one-off script, so Phase 2 does not duplicate logic.
 
@@ -75,17 +79,19 @@ idle → connecting → running_step → success
 
 ## Technology stack
 
-| Area | Choice | Notes |
-|------|--------|--------|
-| Language | Python 3.11+ | Aligns with Chia; runs on Windows controller |
-| Packaging | `pyproject.toml` (`uv` or Poetry) | |
-| Phase 1 CLI | Typer | `deploy`, `status`, `doctor`, `test-ssh` |
-| SSH | **asyncssh** + asyncio | Strong streaming for long `install.sh` runs |
-| Config validation | Pydantic | Load `harvesters.yaml` |
-| Phase 1 inventory | YAML | Git-friendly; secrets outside repo |
-| Phase 2 GUI | **PySide6** | Six live log panels; non-blocking via asyncio/thread bridge |
-| Phase 2 history | SQLite | Deployments, errors, timestamps |
-| Secrets | `keyring` | Windows Credential Manager for key passphrases if needed |
+
+| Area              | Choice                            | Notes                                                       |
+| ----------------- | --------------------------------- | ----------------------------------------------------------- |
+| Language          | Python 3.11+                      | Aligns with Chia; runs on Windows controller                |
+| Packaging         | `pyproject.toml` (`uv` or Poetry) |                                                             |
+| Phase 1 CLI       | Typer                             | `deploy`, `status`, `doctor`, `test-ssh`                    |
+| SSH               | **asyncssh** + asyncio            | Strong streaming for long `install.sh` runs                 |
+| Config validation | Pydantic                          | Load `harvesters.yaml`                                      |
+| Phase 1 inventory | YAML                              | Git-friendly; secrets outside repo                          |
+| Phase 2 GUI       | **PySide6**                       | Six live log panels; non-blocking via asyncio/thread bridge |
+| Phase 2 history   | SQLite                            | Deployments, errors, timestamps                             |
+| Secrets           | `keyring`                         | Windows Credential Manager for key passphrases if needed    |
+
 
 **Defer until recipes are stable:** Ansible playbooks (optional call from Python later). Avoid K8s, CI servers, or harvester-side agents for this scale.
 
@@ -99,63 +105,73 @@ Split into **you already know**, **confirm once per machine**, and **optional bu
 
 #### Required (minimum to automate your upgrade flow)
 
-| Field | Purpose | Your fleet |
-|-------|---------|------------|
-| `id` | Stable key for CLI/GUI (`--target tarkin`) | See table below |
-| `display_name` | Human label in UI | Same as id, title case |
-| `host` | SSH target (IP or DNS) | LAN IPs below |
-| `ssh_port` | SSH port | Default `22` unless changed |
-| `ssh_user` | Linux login | `steve` (all six) |
-| `ssh_key_path` | Private key on Windows controller | **Confirm** — e.g. `%USERPROFILE%\.ssh\id_ed25519` |
-| `chia_root` | Repo directory on harvester | Default `~/chia-blockchain` |
-| `last_known_version` | Baseline for reports / drift | `2.7.0` on all six today |
+
+| Field                | Purpose                                    | Your fleet                                         |
+| -------------------- | ------------------------------------------ | -------------------------------------------------- |
+| `id`                 | Stable key for CLI/GUI (`--target tarkin`) | See table below                                    |
+| `display_name`       | Human label in UI                          | Same as id, title case                             |
+| `host`               | SSH target (IP or DNS)                     | LAN IPs below                                      |
+| `ssh_port`           | SSH port                                   | Default `22` unless changed                        |
+| `ssh_user`           | Linux login                                | `steve` (all six)                                  |
+| `ssh_key_path`       | Private key on Windows controller          | **Confirm** — e.g. `%USERPROFILE%\.ssh\id_ed25519` |
+| `chia_root`          | Repo directory on harvester                | Default `~/chia-blockchain`                        |
+| `last_known_version` | Baseline for reports / drift               | `2.7.0` on all six today                           |
+
 
 #### Strongly recommended (same upgrade on every host)
 
-| Field | Purpose | Default for your recipe |
-|-------|---------|-------------------------|
-| `activate_cmd` | Enter venv before Chia commands | `. ./activate` (run from `chia_root`) |
-| `git_branch` | Checkout target | `latest` |
-| `upgrade_mode` | How code is updated | `git` (matches your manual flow) |
-| `enabled` | Skip in `deploy --target all` if false | `true` |
+
+| Field          | Purpose                                | Default for your recipe               |
+| -------------- | -------------------------------------- | ------------------------------------- |
+| `activate_cmd` | Enter venv before Chia commands        | `. ./activate` (run from `chia_root`) |
+| `git_branch`   | Checkout target                        | `latest`                              |
+| `upgrade_mode` | How code is updated                    | `git` (matches your manual flow)      |
+| `enabled`      | Skip in `deploy --target all` if false | `true`                                |
+
 
 #### Optional (health checks, ops, Phase 2 polish)
 
-| Field | Purpose |
-|-------|---------|
-| `farmer_host` | Post-upgrade: verify harvester sees farmer (if you use a shared farmer) |
-| `tags` | e.g. `rack-a`, `nvme` |
-| `notes` | Free text |
+
+| Field                    | Purpose                                                                     |
+| ------------------------ | --------------------------------------------------------------------------- |
+| `farmer_host`            | Post-upgrade: verify harvester sees farmer (if you use a shared farmer)     |
+| `tags`                   | e.g. `rack-a`, `nvme`                                                       |
+| `notes`                  | Free text                                                                   |
 | `systemd_harvester_unit` | Only if you use systemd instead of `chia start` (your manual flow does not) |
-| `backup_dir` | Where pre-upgrade config backups go on remote host |
-| `max_parallel_group` | Override global concurrency for fragile hosts |
+| `backup_dir`             | Where pre-upgrade config backups go on remote host                          |
+| `max_parallel_group`     | Override global concurrency for fragile hosts                               |
+
 
 **Do not store in git:** private key passphrases, passwords. Use `keyring` or OS store; reference key path only in YAML.
 
 ### Known harvesters (2026-05-22)
 
-| id | display_name | host | last_known_version |
-|----|--------------|------|--------------------|
-| `tarkin` | TARKIN | 192.168.1.137 | 2.7.0 |
-| `kinnakeet` | KINNAKEET | 192.168.1.145 | 2.7.0 |
-| `vader` | VADER | 192.168.1.234 | 2.7.0 |
-| `lando` | LANDO | 192.168.1.235 | 2.7.0 |
-| `wedge` | WEDGE | 192.168.1.237 | 2.7.0 |
-| `padme` | PADME | 192.168.1.249 | 2.7.0 |
+
+| id          | display_name | host          | last_known_version |
+| ----------- | ------------ | ------------- | ------------------ |
+| `tarkin`    | TARKIN       | 192.168.1.137 | 2.7.0              |
+| `kinnakeet` | KINNAKEET    | 192.168.1.145 | 2.7.0              |
+| `vader`     | VADER        | 192.168.1.234 | 2.7.0              |
+| `lando`     | LANDO        | 192.168.1.235 | 2.7.0              |
+| `wedge`     | WEDGE        | 192.168.1.237 | 2.7.0              |
+| `padme`     | PADME        | 192.168.1.249 | 2.7.0              |
+
 
 ### SSH connectivity (verified 2026-05-22)
 
 Test from Windows controller (`ssh steve@192.168.1.137`):
 
-| Finding | Value |
-|---------|--------|
-| Login | `steve` works |
-| Auth today | **Password** (prompted after host key accept) |
-| Auth target for automation | **SSH key** (no password in scripts) |
-| OS (TARKIN) | Ubuntu 24.04.2 LTS, kernel 6.8.0-53-generic |
-| Remote hostname | `tarkin` (shell prompt `steve@tarkin`) |
-| Host key | ED25519 — `SHA256:SeHPMrJIwmroMXacoef/AFj1LL2wV4b20AthhUpY0Aw` (in Windows `known_hosts` after first connect) |
-| Controller LAN IP | `192.168.1.183` (from harvester `Last login` line) |
+
+| Finding                    | Value                                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Login                      | `steve` works                                                                                                 |
+| Auth today                 | **Password** (prompted after host key accept)                                                                 |
+| Auth target for automation | **SSH key** (no password in scripts)                                                                          |
+| OS (TARKIN)                | Ubuntu 24.04.2 LTS, kernel 6.8.0-53-generic                                                                   |
+| Remote hostname            | `tarkin` (shell prompt `steve@tarkin`)                                                                        |
+| Host key                   | ED25519 — `SHA256:SeHPMrJIwmroMXacoef/AFj1LL2wV4b20AthhUpY0Aw` (in Windows `known_hosts` after first connect) |
+| Controller LAN IP          | `192.168.1.183` (from harvester `Last login` line)                                                            |
+
 
 **Before Phase 1 coding:** set up key-based login for `steve` on all six hosts (see [SSH key setup](#ssh-key-setup-windows--harvesters)). Password-only SSH blocks unattended deploy/monitor loops.
 
@@ -214,19 +230,21 @@ harvesters:
 
 Source: `How to Upgrade Chia.md`. Encoded as a **versioned pipeline** the deployment engine runs over SSH (single shell session or step-per-connection—implementation detail).
 
-| Step | id | Remote actions (summary) |
-|------|-----|---------------------------|
-| 1 | `precheck` | SSH OK; `cd $chia_root`; `git status` / disk sanity |
-| 2 | `backup_config` | Copy `config.yaml` (and certs if present) to timestamped backup dir |
-| 3 | `stop_services` | `. ./activate` → `chia stop -d all` → `deactivate` |
-| 4 | `remove_venvs` | `rm -rf venv .penv .venv` (from `chia_root`) |
-| 5 | `git_update` | `git fetch` → `git checkout latest` → `git reset --hard FETCH_HEAD --recurse-submodules` |
-| 6 | `git_clean_check` | `git status` — fail if dirty tree (uncommitted changes / wrong `RELEASE.dev0`) |
-| 7 | `install` | `sh install.sh` (long-running; stream output) |
-| 8 | `activate` | `. ./activate` |
-| 9 | `chia_init` | `chia init`; if SSL permission warnings, `chia init --fix-ssl-permissions` |
-| 10 | `start_harvester` | `chia start harvester` |
-| 11 | `postcheck` | `chia version`; confirm harvester process / farmer connectivity if configured |
+
+| Step | id                | Remote actions (summary)                                                                 |
+| ---- | ----------------- | ---------------------------------------------------------------------------------------- |
+| 1    | `precheck`        | SSH OK; `cd $chia_root`; `git status` / disk sanity                                      |
+| 2    | `backup_config`   | Copy `config.yaml` (and certs if present) to timestamped backup dir                      |
+| 3    | `stop_services`   | `. ./activate` → `chia stop -d all` → `deactivate`                                       |
+| 4    | `remove_venvs`    | `rm -rf venv .penv .venv` (from `chia_root`)                                             |
+| 5    | `git_update`      | `git fetch` → `git checkout latest` → `git reset --hard FETCH_HEAD --recurse-submodules` |
+| 6    | `git_clean_check` | `git status` — fail if dirty tree (uncommitted changes / wrong `RELEASE.dev0`)           |
+| 7    | `install`         | `sh install.sh` (long-running; stream output)                                            |
+| 8    | `activate`        | `. ./activate`                                                                           |
+| 9    | `chia_init`       | `chia init`; if SSL permission warnings, `chia init --fix-ssl-permissions`               |
+| 10   | `start_harvester` | `chia start harvester`                                                                   |
+| 11   | `postcheck`       | `chia version`; confirm harvester process / farmer connectivity if configured            |
+
 
 **CLI flags (Phase 1):**
 
@@ -310,14 +328,16 @@ Use existing key: `C:\Users\stepp\.ssh\id_ed25519` (do **not** overwrite). Insta
 
 Connect by **hostname** on the LAN (e.g. `tarkin`) or by IP; both work if DNS/mDNS resolves.
 
-| id | SSH target (`host`) | IP (fallback) | Key setup |
-|----|---------------------|---------------|-----------|
-| tarkin | `tarkin` | 192.168.1.137 | Done |
-| kinnakeet | `kinnakeet` | 192.168.1.145 | Pending |
-| vader | `vader` | 192.168.1.234 | Pending |
-| lando | `lando` | 192.168.1.235 | Pending |
-| wedge | `wedge` | 192.168.1.237 | Pending |
-| padme | `padme` | 192.168.1.249 | Pending |
+
+| id        | SSH target (`host`) | IP (fallback) | Key setup |
+| --------- | ------------------- | ------------- | --------- |
+| tarkin    | `tarkin`            | 192.168.1.137 | Done      |
+| kinnakeet | `kinnakeet`         | 192.168.1.145 | Pending   |
+| vader     | `vader`             | 192.168.1.234 | Pending   |
+| lando     | `lando`             | 192.168.1.235 | Pending   |
+| wedge     | `wedge`             | 192.168.1.237 | Pending   |
+| padme     | `padme`             | 192.168.1.249 | Pending   |
+
 
 **Per harvester (repeat for kinnakeet, vader, lando, wedge, padme):**
 
@@ -351,13 +371,15 @@ Replace `HOSTNAME` with each row above (e.g. `kinnakeet`). First visit may ask `
 
 ## Alternatives considered
 
-| Option | Verdict |
-|--------|---------|
-| Ansible playbooks | Later, if steps need idempotency; call from Python |
-| Ansible AWX / Jenkins | Overkill for 6 LAN hosts |
-| .NET + SSH.NET + WPF | Fine on Windows; weaker fit for Chia shell workflows |
+
+| Option                        | Verdict                                                |
+| ----------------------------- | ------------------------------------------------------ |
+| Ansible playbooks             | Later, if steps need idempotency; call from Python     |
+| Ansible AWX / Jenkins         | Overkill for 6 LAN hosts                               |
+| .NET + SSH.NET + WPF          | Fine on Windows; weaker fit for Chia shell workflows   |
 | Local web UI (FastAPI + HTMX) | Optional future; PySide6 preferred for six live panels |
-| Harvester agents | Unnecessary for current scale |
+| Harvester agents              | Unnecessary for current scale                          |
+
 
 ---
 

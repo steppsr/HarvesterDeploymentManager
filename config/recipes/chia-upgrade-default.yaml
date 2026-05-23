@@ -1,12 +1,14 @@
 # Deployment recipe — mirrors How to Upgrade Chia.md
 name: chia-upgrade-default
-description: Git-based Chia upgrade on harvester (stop, update, install, start)
+description: Git-based Chia upgrade (stop, update, install, start harvester or farmer)
 
 steps:
   - id: precheck
-    description: Verify chia root and git repository
+    description: Verify chia_root exists and is a git clone (source install required)
+  - id: upgrade_check
+    description: Skip deploy when already on origin/latest (unless --force)
   - id: backup_config
-    description: Backup config.yaml before upgrade
+    description: Backup ~/.chia/mainnet/config and repo config.yaml
   - id: stop_services
     description: Stop Chia services
   - id: remove_venvs
@@ -19,7 +21,7 @@ steps:
     description: Run install.sh (may take several minutes)
   - id: chia_init
     description: Initialize upgraded Chia; run --fix-ssl-permissions if SSL warnings appear
-  - id: start_harvester
-    description: Start harvester service
+  - id: start_services
+    description: Start harvester or farmer (per node role in config)
   - id: postcheck
-    description: Verify chia version after upgrade
+    description: Verify chia version; optional farmer connectivity check

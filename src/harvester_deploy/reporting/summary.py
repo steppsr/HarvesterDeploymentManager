@@ -16,6 +16,8 @@ def _job_to_dict(job: DeployJob) -> dict:
         "harvester_id": job.harvester.id,
         "display_name": job.harvester.display_name,
         "host": job.harvester.host,
+        "role": job.harvester.role_label,
+        "skipped_upgrade": job.skipped_upgrade,
         "state": job.state.value,
         "version_before": job.version_before,
         "version_after": job.version_after,

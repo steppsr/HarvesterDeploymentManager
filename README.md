@@ -1,17 +1,19 @@
 # Harvester Deployment Tool
 
-Deploy [Chia](https://www.chia.net/) harvester upgrades from a **Windows 11** controller to **Ubuntu** harvesters on your local network over **SSH**. Phase 1 provides a CLI; a desktop GUI is planned for a later phase.
+Deploy [Chia](https://www.chia.net/) upgrades from a **Windows 11** controller to **Ubuntu** machines on your local network over **SSH** — dedicated harvesters and your **farmer** node (e.g. JABBA). Phase 1.5 extends the CLI; a desktop GUI is planned for Phase 2.
 
 ## Features
 
-- Fleet inventory via YAML (`config/harvesters.yaml`)
+- Fleet inventory via YAML (`config/harvesters.yaml`) — harvesters and farmer nodes
+- Target groups: `all`, `harvesters`, `farmers`, or by id (`--target jabba` or `tarkin,padme`)
 - Commands: `test-ssh`, `status`, `doctor`, `deploy`
-- Git-based upgrade recipe matching the standard Chia harvester workflow (`git checkout latest`, `install.sh`, `chia init`, start harvester)
-- Parallel deployments with a concurrency limit
-- Live log streaming per harvester
-- JSON summaries under `deployments/` (not committed to git)
-- Recovery mode when a prior run stopped Chia and removed venvs but did not finish `install.sh`
-- Automatic `chia init --fix-ssl-permissions` when SSL warnings appear
+- **Skip when current** — `upgrade_check` compares to `origin/latest` before stopping Chia (`--force` to override)
+- **Config backup** — copies `~/.chia/mainnet/config` (and repo `config.yaml` when present)
+- **Farmer check** — optional `farmer_host` post-deploy connectivity via DNS + `chia farm summary`
+- **Role-aware start** — `chia start harvester` vs `chia start farmer` per node
+- Git-based upgrade recipe (`git checkout latest`, `install.sh`, `chia init`, start)
+- Parallel deployments, live logs, JSON summaries under `deployments/`
+- Recovery mode for interrupted upgrades; automatic `chia init --fix-ssl-permissions`
 
 ## Requirements
 
@@ -24,6 +26,19 @@ Deploy [Chia](https://www.chia.net/) harvester upgrades from a **Windows 11** co
 | Network       | LAN; SSH port 22 (default)                        |
 | Auth          | SSH key (passwordless login recommended)          |
 
+### Supported install types
+
+| Install method | `deploy` | `status` / `doctor` |
+| -------------- | -------- | ------------------- |
+| **Source** — git clone at `chia_root` + `install.sh` | Yes | Yes |
+| **Package** — `.deb`/GUI, `chia` on PATH, no `chia_root` tree | No (clear error at precheck) | Yes (`chia version`, `chia farm summary`) |
+
+The tool auto-detects **source** vs **package** per host. **`chia farm summary` runs on farmer nodes only** (full fleet view). Harvester nodes report version, git drift, and harvester process status instead.
+
+```powershell
+harvester-deploy doctor --target jabba
+harvester-deploy status --target jabba
+```
 
 ## Download and install
 
@@ -105,19 +120,35 @@ copy config\harvesters.example.yaml config\harvesters.yaml
 Set under `defaults` (or per host):
 
 
-| Field          | Description                                          |
-| -------------- | ---------------------------------------------------- |
-| `ssh_user`     | Linux user (e.g. `steve`)                            |
-| `ssh_key_path` | Private key path (e.g. `~/.ssh/id_ed25519`)          |
-| `chia_root`    | Chia repo on harvester (usually `~/chia-blockchain`) |
-| `git_branch`   | Release branch (usually `latest`)                    |
+| Field             | Description                                                |
+| ----------------- | ---------------------------------------------------------- |
+| `ssh_user`        | Linux user (e.g. `steve`)                                  |
+| `ssh_key_path`    | Private key path (e.g. `~/.ssh/id_ed25519`)                |
+| `chia_root`       | Chia git repo (usually `~/chia-blockchain`)                |
+| `chia_config_dir` | Live config dir (default `~/.chia/mainnet/config`)         |
+| `git_branch`      | Release branch (usually `latest`)                          |
+| `role`            | `harvester` (default) or `farmer`                          |
+| `farmer_host`     | Farmer hostname for post-deploy check (harvesters only)    |
 
+Per node, set `id`, `display_name`, `host`, and `last_known_version`.
 
-Per harvester, set `id`, `display_name`, `host` (hostname or IP), and `last_known_version` for your records.
+**Farmer node example** (starts full node with `chia start farmer`):
 
-### 3. Optional: Chia config backup path
+```yaml
+  - id: jabba
+    display_name: JABBA
+    host: jabba
+    role: farmer
+```
 
-The recipe backs up `config.yaml` in the chia repo if present. Your live config may be under `~/.chia/mainnet/config/` on the harvester; back that up separately if needed.
+**Harvester with farmer check:**
+
+```yaml
+  - id: tarkin
+    host: tarkin
+    role: harvester
+    farmer_host: jabba
+```
 
 ## Testing before you deploy
 
@@ -149,27 +180,32 @@ harvester-deploy deploy --target my-harvester --dry-run
 **Warning:** `deploy` stops Chia, removes virtualenvs, updates git, runs `install.sh`, and restarts the harvester. Plan for downtime; test one machine before upgrading the fleet.
 
 ```powershell
-# One harvester
-harvester-deploy deploy --target my-harvester
+# One node
+harvester-deploy deploy --target tarkin
 
-# Several (comma-separated)
-harvester-deploy deploy --target host1,host2 --parallel 2
+# Harvesters only (excludes farmer node)
+harvester-deploy deploy --target harvesters --parallel 2
 
-# All enabled hosts in harvesters.yaml
+# Farmer machine only
+harvester-deploy deploy --target jabba
+
+# Several ids
+harvester-deploy deploy --target tarkin,padme --parallel 2
+
+# Everything enabled in harvesters.yaml
 harvester-deploy deploy --target all --parallel 2
+
+# Force full upgrade even when git reports up to date
+harvester-deploy deploy --target tarkin --force
 ```
+
+If git is already on `origin/latest`, deploy **skips** stop/install and reports `skipped (up to date)` unless you pass `--force`.
 
 Exit codes: `0` = all succeeded, `1` = all failed, `2` = partial failure.
 
 Logs are written to `deployments/<timestamp>/summary.json`.
 
-### Check if an upgrade is needed (manual)
-
-```powershell
-ssh YOUR_USER@HARVESTER_HOST "cd ~/chia-blockchain && git fetch -q && git rev-list HEAD..origin/latest --count"
-```
-
-`0` means already on `origin/latest` (the tool still runs the full recipe unless a version gate is added later).
+`harvester-deploy status` shows a **Behind** column (commits behind `origin/latest`). `doctor` includes `git_behind` and `farmer_host` when set.
 
 ## Project layout
 

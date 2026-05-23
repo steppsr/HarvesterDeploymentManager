@@ -79,11 +79,21 @@ class SshSession:
 
         return exit_status, stdout, stderr
 
-    def shell_prelude(self) -> str:
-        """bash prelude: exit on error, enter chia root."""
-        root = self.harvester.chia_root
+    async def expand_remote_path(self, path: str) -> str:
+        """Expand leading ~ using the remote user's home directory."""
+        path = path.strip()
+        if not path.startswith("~"):
+            return path
+        # Unquoted ~ so the remote shell expands it (quoted "~" does not expand).
+        _, stdout, _ = await self.run(f"echo {path}", check=False, timeout=15)
+        line = stdout.strip().splitlines()[-1].strip() if stdout.strip() else ""
+        return line or path
+
+    def shell_prelude(self, chia_root: str | None = None) -> str:
+        """bash prelude: exit on error, enter chia root (~ expands when unquoted)."""
+        root = chia_root or self.harvester.chia_root
         return f"set -euo pipefail\ncd {root}\n"
 
-    def with_venv(self, command: str) -> str:
+    def with_venv(self, command: str, *, chia_root: str | None = None) -> str:
         activate = self.harvester.activate_cmd
-        return f"{self.shell_prelude()}{activate}\n{command}\n"
+        return f"{self.shell_prelude(chia_root)}{activate}\n{command}\n"
