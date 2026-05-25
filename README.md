@@ -1,6 +1,6 @@
 # Harvester Deployment Manager
 
-Deploy [Chia](https://www.chia.net/) upgrades from a **Windows 11** controller to **Ubuntu** machines on your local network over **SSH** — dedicated harvesters and your **farmer** node (e.g. JABBA). Use the **`hdm`** CLI for scripting or **`harvest-deploy`** for the desktop dashboard (Phase 2).
+Deploy [Chia](https://www.chia.net/) upgrades from a **Windows 11** controller to **Ubuntu** machines on your local network over **SSH** — dedicated harvesters and your **farmer** node (e.g. JABBA). Use the **`hdm`** CLI for scripting or **`harvest-deploy`** for the desktop dashboard (Phase 3).
 
 ## Features
 
@@ -14,6 +14,10 @@ Deploy [Chia](https://www.chia.net/) upgrades from a **Windows 11** controller t
 - Git-based upgrade recipe (`git checkout latest`, `install.sh`, `chia init`, start)
 - Parallel deployments, live logs, JSON summaries under `deployments/`
 - Recovery mode for interrupted upgrades; automatic `chia init --fix-ssl-permissions`
+- Fleet telemetry from farmer `chia farm summary` — status-bar metrics, node-card plots/size/IP, Fleet summary formatting
+- Health-aware fleet refresh — **PING** + **SSH** checks with clear unhealthy card borders
+- Light/Dark theme toggle, Settings menu, configurable refresh interval, and session restore for theme/window state
+- Logs tab tools — **Clear**, **Select All**, **Deselect All**, **Copy to Clipboard**, **Save as**
 
 - **`--quiet` / `-q`** — suppress per-step log lines; show only the final table or doctor panels
 
@@ -84,11 +88,11 @@ harvest-deploy --help
 | Command | Role |
 | ------- | ---- |
 | `hdm` | CLI — `test-ssh`, `status`, `doctor`, `deploy` |
-| `harvest-deploy` | Desktop GUI — fleet dashboard (milestone 2a+) |
+| `harvest-deploy` | Desktop GUI — dashboard, telemetry, logs, settings |
 
 The pip package name stays `harvester-deploy`.
 
-### Desktop GUI (milestone 2a)
+### Desktop GUI
 
 ```powershell
 harvest-deploy
@@ -99,6 +103,10 @@ harvest-deploy
 - **Refresh fleet** on startup and from the **Nodes** tab (same data as `hdm status`)
 - Per card: **Doctor**, **Test SSH**, **History**, **Log**, **Deploy**
 - **Upgrade available** hint when git is behind `origin/latest`
+- **Health checks** during fleet refresh — **PING** + **SSH** failures show a thick red card border
+- **Footer telemetry** for Mainnet/Testnet when farmer summaries are available
+- **Settings** menu for refresh interval and future operator preferences
+- Session restore for **theme** and **window size / maximized / fullscreen**
 
 **Milestone 2b** adds **Deploy…** (targets + advanced options), confirm dialog, **Logs** tab, per-card **Log**, per-card **Deploy**, and a completion summary.
 
@@ -107,6 +115,8 @@ harvest-deploy
 **Milestone 2d** adds **deploy history** — each deploy (and dry run) is stored in SQLite; **Fleet → Deploy history…** or per-card **History** shows a timeline per node (including skipped up-to-date runs). Past `deployments/*/summary.json` files can be imported on first open or via **Import JSON…**. The CLI still writes JSON summaries for scripting.
 
 **Milestone 2e** adds **Mainnet / Testnet** badges on cards, **Show** filters (including Mainnet only / Testnet only), tabbed layout (**Nodes** / **Fleet summary** / **Logs**), app icon, clean PyInstaller builds, and a true empty first-run experience for the packaged `.exe`.
+
+**Phase 3** completes the operator-polish layer: farmer-summary parsing feeds the footer and node cards, Fleet summary adds readable formatting, Logs gains filtered actions, the app supports Light/Dark mode plus session restore, and the GUI now includes operator settings such as the auto-refresh interval.
 
 ### Mainnet / Testnet per node
 
@@ -128,7 +138,7 @@ Output: `dist\HarvesterDeploymentManager.exe`. Run `python scripts\make_icon.py`
 |------|---------|
 | `%LOCALAPPDATA%\HarvesterDeploymentManager\config\harvesters.yaml` | Default YAML location (starts missing on a brand-new install until you import or save inventory) |
 | `%LOCALAPPDATA%\HarvesterDeploymentManager\data\hdm.db` | Fleet inventory SQLite — **still used if you delete YAML but leave the DB** |
-| `%LOCALAPPDATA%\HarvesterDeploymentManager\settings.yaml` | Optional path you picked with **Choose config file…** or **Import from YAML…** (not your dev repo unless you chose that file) |
+| `%LOCALAPPDATA%\HarvesterDeploymentManager\settings.yaml` | Remembered GUI preferences such as chosen config file, theme, refresh interval, and window/session state |
 
 The packaged `.exe` starts with **no predefined nodes**. To use an existing fleet file, choose **Fleet → Choose config file…** or **Manage inventory → Import from YAML…** and point at your `harvesters.yaml`.
 

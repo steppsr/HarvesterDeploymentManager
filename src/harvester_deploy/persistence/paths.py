@@ -11,6 +11,14 @@ import yaml
 
 _APP_DIR_NAME = "HarvesterDeploymentManager"
 _SETTINGS_FILE = "settings.yaml"
+_THEME_VALUES = {"light", "dark"}
+_MIN_REFRESH_INTERVAL_SECONDS = 30
+_MAX_REFRESH_INTERVAL_SECONDS = 3600
+_MIN_WINDOW_WIDTH = 640
+_MIN_WINDOW_HEIGHT = 480
+_MAX_WINDOW_WIDTH = 10000
+_MAX_WINDOW_HEIGHT = 10000
+_WINDOW_MODES = {"normal", "maximized", "fullscreen"}
 
 
 def is_frozen() -> bool:
@@ -50,15 +58,29 @@ def settings_path() -> Path:
     return user_data_dir() / _SETTINGS_FILE
 
 
-def load_persisted_config_path() -> Path | None:
-    """Last config file the user chose (GUI only), if it still exists."""
+def _load_settings() -> dict:
     path = settings_path()
     if not path.is_file():
-        return None
+        return {}
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError):
-        return None
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _write_settings(data: dict) -> None:
+    home = user_data_dir()
+    home.mkdir(parents=True, exist_ok=True)
+    settings_path().write_text(
+        yaml.safe_dump(data, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def load_persisted_config_path() -> Path | None:
+    """Last config file the user chose (GUI only), if it still exists."""
+    raw = _load_settings()
     value = raw.get("config_yaml")
     if not value:
         return None
@@ -68,18 +90,113 @@ def load_persisted_config_path() -> Path | None:
 
 def save_persisted_config_path(config_yaml: Path) -> None:
     """Remember which harvesters.yaml the installed app should use."""
-    home = user_data_dir()
-    home.mkdir(parents=True, exist_ok=True)
-    payload = {"config_yaml": str(config_yaml.resolve())}
-    settings_path().write_text(
-        yaml.safe_dump(payload, sort_keys=False),
-        encoding="utf-8",
-    )
+    payload = _load_settings()
+    payload["config_yaml"] = str(config_yaml.resolve())
+    _write_settings(payload)
 
 
 def clear_persisted_config_path() -> None:
-    if settings_path().is_file():
+    payload = _load_settings()
+    payload.pop("config_yaml", None)
+    if payload:
+        _write_settings(payload)
+    elif settings_path().is_file():
         settings_path().unlink()
+
+
+def load_theme_preference() -> str | None:
+    value = str(_load_settings().get("theme") or "").strip().lower()
+    return value if value in _THEME_VALUES else None
+
+
+def save_theme_preference(theme: str) -> None:
+    value = str(theme).strip().lower()
+    if value not in _THEME_VALUES:
+        raise ValueError(f"Unsupported theme: {theme}")
+    payload = _load_settings()
+    payload["theme"] = value
+    _write_settings(payload)
+
+
+def load_refresh_interval_seconds() -> int | None:
+    value = _load_settings().get("refresh_interval_seconds")
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return None
+    if _MIN_REFRESH_INTERVAL_SECONDS <= seconds <= _MAX_REFRESH_INTERVAL_SECONDS:
+        return seconds
+    return None
+
+
+def save_refresh_interval_seconds(seconds: int) -> None:
+    value = int(seconds)
+    if not (_MIN_REFRESH_INTERVAL_SECONDS <= value <= _MAX_REFRESH_INTERVAL_SECONDS):
+        raise ValueError(f"Unsupported refresh interval: {seconds}")
+    payload = _load_settings()
+    payload["refresh_interval_seconds"] = value
+    _write_settings(payload)
+
+
+def load_window_state() -> tuple[int | None, int | None, str]:
+    raw = _load_settings()
+    width = _coerce_window_dimension(
+        raw.get("window_width"),
+        minimum=_MIN_WINDOW_WIDTH,
+        maximum=_MAX_WINDOW_WIDTH,
+    )
+    height = _coerce_window_dimension(
+        raw.get("window_height"),
+        minimum=_MIN_WINDOW_HEIGHT,
+        maximum=_MAX_WINDOW_HEIGHT,
+    )
+    mode = str(raw.get("window_mode") or "").strip().lower()
+    if mode not in _WINDOW_MODES:
+        mode = "fullscreen" if _coerce_bool(raw.get("window_fullscreen")) else "normal"
+    return width, height, mode
+
+
+def save_window_state(*, width: int, height: int, mode: str) -> None:
+    w = _coerce_window_dimension(
+        width,
+        minimum=_MIN_WINDOW_WIDTH,
+        maximum=_MAX_WINDOW_WIDTH,
+    )
+    h = _coerce_window_dimension(
+        height,
+        minimum=_MIN_WINDOW_HEIGHT,
+        maximum=_MAX_WINDOW_HEIGHT,
+    )
+    if w is None or h is None:
+        raise ValueError(f"Unsupported window size: {width}x{height}")
+    state = str(mode).strip().lower()
+    if state not in _WINDOW_MODES:
+        raise ValueError(f"Unsupported window mode: {mode}")
+    payload = _load_settings()
+    payload["window_width"] = w
+    payload["window_height"] = h
+    payload["window_mode"] = state
+    payload["window_fullscreen"] = state == "fullscreen"
+    _write_settings(payload)
+
+
+def _coerce_window_dimension(
+    value: object, *, minimum: int, maximum: int
+) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    if minimum <= number <= maximum:
+        return number
+    return None
+
+
+def _coerce_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "on"}
 
 
 def default_config_dir() -> Path:

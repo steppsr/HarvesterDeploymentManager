@@ -23,6 +23,7 @@ from harvester_deploy.domain.models import ChiaNetwork, Harvester, NodeRole
 from harvester_deploy.domain.network import DEFAULT_CHIA_CONFIG_DIR
 from harvester_deploy.gui.async_runner import AsyncTaskBridge
 from harvester_deploy.gui.services import node_test_ssh
+from harvester_deploy.gui.styles import current_theme_mode, theme_colors
 from harvester_deploy.persistence.keyring_support import (
     keyring_available,
     set_passphrase,
@@ -47,6 +48,9 @@ class NodeEditorDialog(QDialog):
         self._original_id = harvester.id if harvester else None
         self._async_thread = async_thread
         self.result_harvester: Harvester | None = None
+        hint_style = (
+            f"color: {theme_colors(current_theme_mode()).text_muted}; font-size: 11px;"
+        )
 
         is_edit = harvester is not None
         self.setWindowTitle("Edit node" if is_edit else "Add node")
@@ -55,7 +59,7 @@ class NodeEditorDialog(QDialog):
         layout = QVBoxLayout(self)
         if defaults_display:
             hint = QLabel(f"Defaults: {defaults_display}")
-            hint.setStyleSheet("color: #6c757d; font-size: 11px;")
+            hint.setStyleSheet(hint_style)
             hint.setWordWrap(True)
             layout.addWidget(hint)
 
@@ -87,7 +91,7 @@ class NodeEditorDialog(QDialog):
         network_hint = QLabel(
             "For filtering and badges only — does not change the config directory."
         )
-        network_hint.setStyleSheet("color: #6c757d; font-size: 11px;")
+        network_hint.setStyleSheet(hint_style)
         network_hint.setWordWrap(True)
         form.addRow("", network_hint)
 
@@ -135,7 +139,7 @@ class NodeEditorDialog(QDialog):
             "on the host first (README → SSH setup)."
         )
         ssh_hint.setWordWrap(True)
-        ssh_hint.setStyleSheet("color: #6c757d; font-size: 11px;")
+        ssh_hint.setStyleSheet(hint_style)
         layout.addWidget(ssh_hint)
 
         buttons = QDialogButtonBox()

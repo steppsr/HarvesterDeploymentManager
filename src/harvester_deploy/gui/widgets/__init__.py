@@ -10,6 +10,7 @@ from harvester_deploy.gui.widgets.inventory_dialog import InventoryDialog
 from harvester_deploy.gui.widgets.node_editor_dialog import NodeEditorDialog
 from harvester_deploy.gui.widgets.log_panel import LogPanel
 from harvester_deploy.gui.widgets.node_card import NodeCard
+from harvester_deploy.gui.widgets.settings_dialog import SettingsDialog
 
 __all__ = [
     "AboutDialog",
@@ -22,4 +23,5 @@ __all__ = [
     "LogPanel",
     "NodeCard",
     "NodeEditorDialog",
+    "SettingsDialog",
 ]

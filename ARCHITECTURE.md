@@ -13,6 +13,7 @@ A modular, **Python-centric controller** on Windows 11 orchestrates **agentless 
 | ----------- | ----------------------------------------------------------------------------------------------------------------------- |
 | **Phase 1** | From Windows: SSH to one or all harvesters, run the upgrade pipeline, stream progress, report per-host success/failure. |
 | **Phase 2** | **Harvester Deployment Manager** (GUI): dashboard, deploy, live logs; complements CLI. See [Phase 2](#phase-2--harvester-deployment-manager-gui). |
+| **Phase 3** | Improve observability and operator polish: telemetry, health checks, settings, theming, session restore, richer logs. |
 
 
 **Scale today:** 6 harvesters (see [Inventory](#harvester-inventory)). Design for adding hosts without code changes.
@@ -411,6 +412,24 @@ Inventory CRUD, SQLite history, and PyInstaller polish follow in later milestone
 5. (2d+) Per-node deploy history timeline.
 6. Packaged Windows `.exe` starts empty and uses a persistent user config/data folder.
 
+### Phase 3 — Observability and operator polish
+
+**Source of decisions:** `docs/PHASE_3_Planning.md`
+
+| Milestone | Version | Delivers |
+|-----------|---------|----------|
+| **3a — Fleet telemetry** | v0.3.5 | **Done** — parse farmer `chia farm summary`, 120s refresh, status-bar metrics, node-card plots/size/IP |
+| **3b — Themes and preferences** | v0.3.5 | **Done** — Light/Dark mode, persisted theme choice, top-right toggle, session restore for theme/window state |
+| **3c — Operator polish and diagnostics** | v0.3.5 | **Done** — ping + SSH health checks, unhealthy card borders, Fleet summary formatting, filtered log tools, Settings menu, configurable refresh interval |
+
+### Phase 3 success criteria
+
+1. Farmer summaries populate both the Fleet summary tab and the footer telemetry.
+2. Node cards surface per-node health problems quickly via refresh-driven ping/SSH diagnostics.
+3. The GUI remembers core operator preferences such as theme, refresh interval, and window state.
+4. Logs tab tools operate on the visible filtered subset instead of the full buffer.
+5. Phase 3 remains additive: deploy and inventory workflows continue to use the same stable core engine.
+
 ### Planned package layout (Phase 2)
 
 ```text
@@ -441,9 +460,13 @@ HarvesterDeploymentManager/
   tests/
   docs/
     PHASE_2_Planning.md
+    PHASE_3_Planning.md
+    PHASE_4_Planning.md
     ARCHITECTURE.md
     RELEASE_v0.1.0.md
     RELEASE_v0.2.0.md
+    RELEASE_v0.3.4.md
+    RELEASE_v0.3.5.md
 ```
 
 ---
@@ -513,6 +536,7 @@ Replace `HOSTNAME` with each row above (e.g. `kinnakeet`). First visit may ask `
 
 - **Phase 1 / 1.5** — proven CLI and library on a real six-harvester + farmer fleet
 - **Phase 2** — PySide6 front-end on the same engine; CLI remains for scripting
-- **Personal scope** — Phase 2 now covers daily-use GUI workflows: inventory, deploy, history, and a packaged Windows app
+- **Phase 3** — observability and operator polish on top of the same engine: telemetry, health, settings, theming, and log tooling
+- **Personal scope** — the app now covers daily-use GUI workflows for inventory, deploy, history, telemetry, and packaged Windows distribution
 
-**Phase 2 status:** complete through milestone **2e**. Next work can focus on post-Phase-2 ideas such as package/deb deploy support, richer log tools, cancel, and broader cross-platform packaging.
+**Current status:** Phase 2 is complete through milestone **2e** and Phase 3 is complete through **3c**. Next work moves into Phase 4 planning for package/deb upgrade workflows, deploy cancel investigation, controller platform expansion, and broader future ideas.

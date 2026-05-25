@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import html
 import re
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QKeySequence, QPalette, QColor
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -36,6 +37,7 @@ from harvester_deploy.domain.models import (
     JobState,
     NodeRole,
 )
+from harvester_deploy.domain.telemetry import NetworkTelemetry, parse_farm_summary
 from harvester_deploy.persistence.config import AppConfig
 from harvester_deploy.gui.async_runner import AsyncLoopThread, AsyncTaskBridge
 from harvester_deploy.gui.log_hub import DeployLogHub
@@ -47,7 +49,12 @@ from harvester_deploy.gui.services import (
     node_test_ssh,
 )
 from harvester_deploy.gui.resources import app_icon
-from harvester_deploy.gui.styles import APP_STYLESHEET
+from harvester_deploy.gui.styles import (
+    ThemeMode,
+    apply_app_theme,
+    current_theme_mode,
+    theme_colors,
+)
 from harvester_deploy.gui.widgets.fleet_summary_panel import FleetSummaryPanel
 from harvester_deploy.gui.widgets import (
     AboutDialog,
@@ -59,6 +66,7 @@ from harvester_deploy.gui.widgets import (
     HistoryDialog,
     LogPanel,
     NodeCard,
+    SettingsDialog,
 )
 from harvester_deploy.gui.widgets.node_card import CARD_MAX_WIDTH
 from harvester_deploy.persistence.config import resolve_targets
@@ -67,8 +75,14 @@ from harvester_deploy.persistence.paths import (
     default_config_path,
     ensure_app_directories,
     is_frozen,
+    load_refresh_interval_seconds,
+    load_theme_preference,
+    load_window_state,
     resolve_config_path,
+    save_refresh_interval_seconds,
+    save_theme_preference,
     save_persisted_config_path,
+    save_window_state,
     seed_config_if_empty,
 )
 from harvester_deploy.persistence.fleet_store import config_dir, load_fleet
@@ -76,6 +90,7 @@ from harvester_deploy.recipes.engine import load_recipe
 from harvester_deploy.reporting.summary import write_summary
 
 _STEP_RE = re.compile(r"--- step:\s*(\S+)")
+_IP_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
 # Horizontal space per grid column (fixed card width + spacing).
 _CARD_GRID_SPACING = 16
 _CARD_CELL_WIDTH = CARD_MAX_WIDTH + _CARD_GRID_SPACING
@@ -84,6 +99,8 @@ _CARD_ROW_HEIGHT_FALLBACK = 340
 _TAB_NODES = 0
 _TAB_FLEET = 1
 _TAB_LOGS = 2
+_DEFAULT_REFRESH_SECONDS = 120
+_STATUS_MESSAGE_RESERVE = 320
 
 _FILTER_OPTIONS: list[tuple[str, str]] = [
     ("All nodes", "all"),
@@ -113,13 +130,46 @@ class MainWindow(QMainWindow):
         self._app_config: AppConfig | None = None
         self._harvesters: list[Harvester] = []
         self._cards: dict[str, NodeCard] = {}
+        self._network_telemetry: dict[ChiaNetwork, NetworkTelemetry] = {}
+        self._theme_mode = current_theme_mode()
+        self._refresh_interval_seconds = (
+            load_refresh_interval_seconds() or _DEFAULT_REFRESH_SECONDS
+        )
+        self._restore_window_mode = "normal"
         self._filter = "all"
         self._last_card_cols: int | None = None
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setInterval(self._refresh_interval_seconds * 1000)
+        self._refresh_timer.timeout.connect(self._on_auto_refresh)
 
         self._build_menu()
         self._build_central()
         self.setStatusBar(QStatusBar())
+        self.statusBar().setMinimumHeight(34)
+        self._status_spacer = QWidget()
+        self._status_spacer.setFixedWidth(_STATUS_MESSAGE_RESERVE)
+        self._status_spacer.setStyleSheet("background: transparent;")
+        (
+            self._status_mainnet,
+            self._status_mainnet_badge,
+            self._status_mainnet_text,
+        ) = self._build_status_section("Mainnet")
+        self._status_gap = QWidget()
+        self._status_gap.setFixedWidth(12)
+        self._status_gap.setStyleSheet("background: transparent;")
+        (
+            self._status_testnet,
+            self._status_testnet_badge,
+            self._status_testnet_text,
+        ) = self._build_status_section("Testnet")
+        self.statusBar().addPermanentWidget(self._status_spacer)
+        self.statusBar().addPermanentWidget(self._status_mainnet)
+        self.statusBar().addPermanentWidget(self._status_gap)
+        self.statusBar().addPermanentWidget(self._status_testnet)
         self.statusBar().showMessage("Ready")
+        self._apply_widget_theme()
+        self._restore_window_state()
+        self._refresh_timer.start()
 
         try:
             self._reload_config()
@@ -150,6 +200,33 @@ class MainWindow(QMainWindow):
         fleet_menu.addAction("Choose config &file…", self._choose_config_file)
         fleet_menu.addAction("Open config &folder", self._open_config_folder)
 
+        view_menu = menu_bar.addMenu("&View")
+        theme_menu = view_menu.addMenu("&Theme")
+        self._theme_actions = QActionGroup(self)
+        self._theme_actions.setExclusive(True)
+
+        self._theme_light_action = QAction("&Light", self)
+        self._theme_light_action.setCheckable(True)
+        self._theme_light_action.triggered.connect(
+            lambda checked: checked and self._set_theme(ThemeMode.LIGHT)
+        )
+        theme_menu.addAction(self._theme_light_action)
+        self._theme_actions.addAction(self._theme_light_action)
+
+        self._theme_dark_action = QAction("&Dark", self)
+        self._theme_dark_action.setCheckable(True)
+        self._theme_dark_action.triggered.connect(
+            lambda checked: checked and self._set_theme(ThemeMode.DARK)
+        )
+        theme_menu.addAction(self._theme_dark_action)
+        self._theme_actions.addAction(self._theme_dark_action)
+        self._sync_theme_actions()
+
+        settings_menu = menu_bar.addMenu("&Settings")
+        settings_act = QAction("&Preferences…", self)
+        settings_act.triggered.connect(self._open_settings)
+        settings_menu.addAction(settings_act)
+
         help_menu = menu_bar.addMenu("&Help")
         about_act = QAction("&About", self)
         about_act.triggered.connect(self._show_about)
@@ -162,9 +239,24 @@ class MainWindow(QMainWindow):
         outer.setSpacing(12)
         outer.setContentsMargins(12, 12, 12, 12)
 
+        summary_row = QHBoxLayout()
+        summary_row.setContentsMargins(0, 0, 0, 0)
+        summary_row.setSpacing(12)
+
         self._summary = QLabel("Loading fleet from config…")
         self._summary.setWordWrap(True)
-        outer.addWidget(self._summary)
+        summary_row.addWidget(self._summary, stretch=1)
+
+        self._btn_theme_toggle = QPushButton()
+        self._btn_theme_toggle.setObjectName("themeToggleButton")
+        self._btn_theme_toggle.clicked.connect(self._toggle_theme)
+        self._btn_theme_toggle.setFixedSize(38, 26)
+        summary_row.addWidget(
+            self._btn_theme_toggle,
+            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
+        )
+        self._sync_theme_actions()
+        outer.addLayout(summary_row)
 
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
@@ -240,11 +332,135 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         AboutDialog(self).exec()
 
+    def _restore_window_state(self) -> None:
+        width, height, mode = load_window_state()
+        if width is not None and height is not None:
+            self.resize(width, height)
+        self._restore_window_mode = mode
+
+    def restore_window_mode(self) -> str:
+        return self._restore_window_mode
+
+    def _open_settings(self) -> None:
+        dlg = SettingsDialog(
+            refresh_interval_seconds=self._refresh_interval_seconds,
+            parent=self,
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        seconds = dlg.refresh_interval_seconds()
+        self._set_refresh_interval_seconds(seconds, persist=True)
+        self.statusBar().showMessage(
+            f"Auto refresh interval set to {seconds} seconds",
+            5000,
+        )
+
+    def _build_status_section(self, label: str) -> tuple[QWidget, QLabel, QLabel]:
+        host = QWidget()
+        host.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(host)
+        layout.setContentsMargins(0, 3, 0, 3)
+        layout.setSpacing(6)
+        badge = QLabel(label)
+        text = QLabel("")
+        text.setTextFormat(Qt.TextFormat.RichText)
+        text.setStyleSheet("background: transparent;")
+        layout.addWidget(badge, alignment=Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(text, alignment=Qt.AlignmentFlag.AlignVCenter)
+        return host, badge, text
+
+    def _sync_theme_actions(self) -> None:
+        self._theme_light_action.setChecked(self._theme_mode == ThemeMode.LIGHT)
+        self._theme_dark_action.setChecked(self._theme_mode == ThemeMode.DARK)
+        if hasattr(self, "_btn_theme_toggle"):
+            next_label = "🌙" if self._theme_mode == ThemeMode.LIGHT else "☀️"
+            next_tip = "Switch to dark mode" if self._theme_mode == ThemeMode.LIGHT else "Switch to light mode"
+            self._btn_theme_toggle.setText(next_label)
+            self._btn_theme_toggle.setToolTip(
+                next_tip
+            )
+
+    def _apply_widget_theme(self) -> None:
+        for card in self._cards.values():
+            card.apply_theme(self._theme_mode)
+        if hasattr(self, "_fleet_summary"):
+            self._fleet_summary.apply_theme(self._theme_mode)
+        if hasattr(self, "_log_panel"):
+            self._log_panel.apply_theme(self._theme_mode)
+        self._apply_status_bar_theme()
+
+    def _apply_status_bar_theme(self) -> None:
+        colors = {
+            ChiaNetwork.MAINNET: "#0d6efd",
+            ChiaNetwork.TESTNET: "#6f42c1",
+        }
+        for network, badge in (
+            (ChiaNetwork.MAINNET, self._status_mainnet_badge),
+            (ChiaNetwork.TESTNET, self._status_testnet_badge),
+        ):
+            badge.setStyleSheet(
+                "color: white; "
+                f"background-color: {colors[network]}; "
+                "border-radius: 7px; "
+                "padding: 2px 8px; "
+                "font-weight: 600;"
+            )
+        for label in (self._status_mainnet_text, self._status_testnet_text):
+            label.setStyleSheet("background: transparent;")
+
+    def _toggle_theme(self) -> None:
+        next_theme = (
+            ThemeMode.DARK
+            if self._theme_mode == ThemeMode.LIGHT
+            else ThemeMode.LIGHT
+        )
+        self._set_theme(next_theme)
+
+    def _set_theme(self, theme: ThemeMode) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+        apply_app_theme(app, theme)
+        self._theme_mode = theme
+        save_theme_preference(theme.value)
+        self._sync_theme_actions()
+        self._apply_widget_theme()
+
+    def _set_refresh_interval_seconds(self, seconds: int, *, persist: bool) -> None:
+        self._refresh_interval_seconds = int(seconds)
+        interval_ms = self._refresh_interval_seconds * 1000
+        self._refresh_timer.setInterval(interval_ms)
+        if self._refresh_timer.isActive():
+            self._refresh_timer.start(interval_ms)
+        if persist:
+            save_refresh_interval_seconds(self._refresh_interval_seconds)
+
+    def _save_window_state(self) -> None:
+        geometry = self.normalGeometry()
+        if (self.isFullScreen() or self.isMaximized()) and geometry.isValid():
+            width = geometry.width()
+            height = geometry.height()
+        else:
+            width = self.width()
+            height = self.height()
+        if self.isFullScreen():
+            mode = "fullscreen"
+        elif self.isMaximized():
+            mode = "maximized"
+        else:
+            mode = "normal"
+        save_window_state(
+            width=width,
+            height=height,
+            mode=mode,
+        )
+
     def _reload_config(self) -> None:
         self._app_config, sync_note = load_fleet(self._config_path)
         self._harvesters = [h for h in self._app_config.harvesters if h.enabled]
         self._rebuild_cards()
         self._update_summary_label()
+        self._clear_telemetry()
         all_ids = [h.id for h in self._app_config.harvesters]
         self._log_panel.set_nodes(all_ids)
         if sync_note:
@@ -361,6 +577,7 @@ class MainWindow(QMainWindow):
             card.history_requested.connect(self._on_node_history)
             card.deploy_requested.connect(self._deploy_single_node)
             card.log_requested.connect(self._on_node_log)
+            card.apply_theme(self._theme_mode)
             self._cards[harvester.id] = card
 
         self._last_card_cols = None
@@ -488,10 +705,123 @@ class MainWindow(QMainWindow):
         mainnet = sum(1 for h in self._harvesters if h.network == ChiaNetwork.MAINNET)
         testnet = n - mainnet
         self._summary.setText(
-            f"<b>{n}</b> enabled node(s) — {harvesters} harvester(s), {farmers} farmer(s); "
-            f"{mainnet} mainnet, {testnet} testnet<br>"
-            f"Config: <code>{self._config_path}</code>"
+            f"<b>{n}</b> enabled node(s) — {harvesters} harvester(s), "
+            f"{farmers} farmer(s); {mainnet} mainnet, {testnet} testnet"
         )
+
+    def _clear_telemetry(self) -> None:
+        self._network_telemetry = {}
+        for card in self._cards.values():
+            card.apply_telemetry()
+        self._update_status_bar_telemetry()
+
+    def _apply_telemetry(self, results: list[dict | BaseException]) -> None:
+        self._network_telemetry = self._collect_network_telemetry(results)
+
+        for harvester, result in zip(self._harvesters, results, strict=True):
+            if isinstance(result, BaseException):
+                continue
+
+            ip_address = result.get("ip_address")
+            plot_count = None
+            plot_size = None
+            network = self._network_telemetry.get(harvester.network)
+            if network is not None:
+                if harvester.role == NodeRole.FARMER and network.local_harvester is not None:
+                    plot_count = network.local_harvester.plot_count
+                    plot_size = network.local_harvester.plot_size
+                else:
+                    matched_ip = ip_address
+                    if matched_ip is None and _IP_RE.match(harvester.host):
+                        matched_ip = harvester.host
+                    remote = (
+                        network.remote_harvesters.get(matched_ip)
+                        if matched_ip is not None
+                        else None
+                    )
+                    if remote is not None:
+                        plot_count = remote.plot_count
+                        plot_size = remote.plot_size
+                        ip_address = remote.ip_address or ip_address
+
+            card = self._cards.get(harvester.id)
+            if card is not None:
+                card.apply_telemetry(
+                    ip_address=ip_address,
+                    plot_count=plot_count,
+                    plot_size=plot_size,
+                )
+
+        self._update_status_bar_telemetry()
+
+    def _collect_network_telemetry(
+        self, results: list[dict | BaseException]
+    ) -> dict[ChiaNetwork, NetworkTelemetry]:
+        telemetry: dict[ChiaNetwork, NetworkTelemetry] = {}
+        for harvester, result in zip(self._harvesters, results, strict=True):
+            if harvester.role != NodeRole.FARMER or isinstance(result, BaseException):
+                continue
+            parsed = parse_farm_summary(result.get("summary", ""), harvester.network)
+            if parsed is not None:
+                telemetry[harvester.network] = parsed
+        return telemetry
+
+    def _update_status_bar_telemetry(self) -> None:
+        show_mainnet = self._has_network_nodes(ChiaNetwork.MAINNET)
+        show_testnet = self._has_network_nodes(ChiaNetwork.TESTNET)
+
+        self._status_mainnet.setVisible(show_mainnet)
+        self._status_testnet.setVisible(show_testnet)
+        self._status_gap.setVisible(show_mainnet and show_testnet)
+
+        self._status_mainnet_text.setText(
+            self._format_network_status(ChiaNetwork.MAINNET) if show_mainnet else ""
+        )
+        self._status_testnet_text.setText(
+            self._format_network_status(ChiaNetwork.TESTNET) if show_testnet else ""
+        )
+
+    def _has_network_nodes(self, network: ChiaNetwork) -> bool:
+        return any(h.network == network for h in self._harvesters)
+
+    def _format_network_status(self, network: ChiaNetwork) -> str:
+        telemetry = self._network_telemetry.get(network)
+        if telemetry is None:
+            return ""
+        colors = theme_colors(self._theme_mode)
+        value_color = (
+            colors.accent_pressed
+            if self._theme_mode == ThemeMode.LIGHT
+            else colors.accent_hover
+        )
+        parts: list[str] = []
+        if telemetry.last_farmed_height:
+            parts.append(
+                f"<span style='color:{colors.text_muted}; font-weight:600;'>height</span> "
+                f"<span style='color:{value_color};'>{html.escape(telemetry.last_farmed_height)}</span>"
+            )
+        if telemetry.total_plot_count is not None:
+            parts.append(
+                f"<span style='color:{colors.text_muted}; font-weight:600;'>plots</span> "
+                f"<span style='color:{value_color};'>{telemetry.total_plot_count:,}</span>"
+            )
+        if telemetry.total_plot_size:
+            parts.append(
+                f"<span style='color:{colors.text_muted}; font-weight:600;'>size</span> "
+                f"<span style='color:{colors.success};'>{html.escape(telemetry.total_plot_size)}</span>"
+            )
+        if telemetry.estimated_network_space:
+            parts.append(
+                f"<span style='color:{colors.text_muted}; font-weight:600;'>net</span> "
+                f"<span style='color:{value_color};'>{html.escape(telemetry.estimated_network_space)}</span>"
+            )
+        if telemetry.expected_time_to_win:
+            parts.append(
+                f"<span style='color:{colors.text_muted}; font-weight:600;'>win</span> "
+                f"<span style='color:{colors.warning};'>{html.escape(telemetry.expected_time_to_win)}</span>"
+            )
+        separator = f"<span style='color:{colors.text_muted};'> | </span>"
+        return separator.join(parts)
 
     def _set_fleet_busy(self, busy: bool) -> None:
         enabled = not busy and not self._deploy_active
@@ -510,12 +840,20 @@ class MainWindow(QMainWindow):
         if self._pending_ops == 0:
             self._set_fleet_busy(False)
 
-    def _run_async(self, coro, on_success, *, busy_message: str) -> None:
+    def _run_async(
+        self,
+        coro,
+        on_success,
+        *,
+        busy_message: str | None,
+        on_failure=None,
+    ) -> None:
         self._inc_busy()
-        self.statusBar().showMessage(busy_message)
+        if busy_message:
+            self.statusBar().showMessage(busy_message)
         bridge = AsyncTaskBridge(self._async, parent=self)
         bridge.succeeded.connect(on_success)
-        bridge.failed.connect(self._on_async_failed)
+        bridge.failed.connect(on_failure or self._on_async_failed)
         bridge.submit(coro)
 
     def _on_async_failed(self, message: str) -> None:
@@ -671,35 +1009,59 @@ class MainWindow(QMainWindow):
             card.set_deploying(False)
         self._set_fleet_busy(False)
 
-    def _refresh_fleet(self) -> None:
-        if self._deploy_active or not self._harvesters:
+    def _refresh_fleet(self, *, background: bool = False) -> None:
+        if self._deploy_active or self._pending_ops > 0 or not self._harvesters:
             if not self._harvesters:
                 self.statusBar().showMessage("No enabled nodes in config", 5000)
             return
 
-        for card in self._cards.values():
-            card.set_busy(True)
+        if not background:
+            for card in self._cards.values():
+                card.set_busy(True)
 
         def on_success(results: list) -> None:
-            for harvester, result in zip(self._harvesters, results, strict=True):
-                card = self._cards.get(harvester.id)
-                if card is None:
-                    continue
-                if isinstance(result, BaseException):
-                    card.set_error(str(result))
+            try:
+                for harvester, result in zip(self._harvesters, results, strict=True):
+                    card = self._cards.get(harvester.id)
+                    if card is None:
+                        continue
+                    if isinstance(result, BaseException):
+                        card.set_error(str(result))
+                    else:
+                        card.apply_status(result)
+                self._apply_telemetry(results)
+                self._fleet_summary.update_from_status(self._harvesters, results)
+                if not background:
+                    self.statusBar().showMessage("Fleet status updated", 5000)
+                self._last_card_cols = None
+                self._relayout_card_grid()
+            except Exception as exc:
+                for card in self._cards.values():
+                    card.set_busy(False)
+                if background:
+                    self.statusBar().showMessage(
+                        f"Auto refresh UI update failed: {exc}",
+                        8000,
+                    )
                 else:
-                    card.apply_status(result)
-            self._fleet_summary.update_from_status(self._harvesters, results)
-            self._dec_busy()
-            self.statusBar().showMessage("Fleet status updated", 5000)
-            self._last_card_cols = None
-            self._relayout_card_grid()
+                    QMessageBox.warning(self, "Refresh failed", str(exc))
+                    self.statusBar().showMessage(f"Refresh failed: {exc}", 8000)
+            finally:
+                self._dec_busy()
 
         self._run_async(
             fleet_status(self._harvesters),
             on_success,
-            busy_message="Refreshing fleet status…",
+            busy_message=None if background else "Refreshing fleet status…",
+            on_failure=self._on_background_refresh_failed if background else None,
         )
+
+    def _on_auto_refresh(self) -> None:
+        self._refresh_fleet(background=True)
+
+    def _on_background_refresh_failed(self, message: str) -> None:
+        self._dec_busy()
+        self.statusBar().showMessage(f"Auto refresh failed: {message}", 8000)
 
     def _on_doctor(self, node_id: str) -> None:
         if self._deploy_active:
@@ -772,26 +1134,16 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "SSH test failed", message)
 
     def closeEvent(self, event) -> None:
+        try:
+            self._save_window_state()
+        except Exception:
+            pass
         self._async.shutdown()
         super().closeEvent(event)
 
-
-def _apply_app_theme(app: QApplication) -> None:
-    app.setStyle("Fusion")
-    palette = QPalette()
-    palette.setColor(QPalette.ColorRole.Window, QColor("#f0f2f5"))
-    palette.setColor(QPalette.ColorRole.WindowText, QColor("#1a1a1a"))
-    palette.setColor(QPalette.ColorRole.Base, QColor("#ffffff"))
-    palette.setColor(QPalette.ColorRole.Text, QColor("#1a1a1a"))
-    palette.setColor(QPalette.ColorRole.Button, QColor("#e9ecef"))
-    palette.setColor(QPalette.ColorRole.ButtonText, QColor("#1a1a1a"))
-    app.setPalette(palette)
-    app.setStyleSheet(APP_STYLESHEET)
-
-
 def run_gui(config_path: Path | None = None) -> int:
     app = QApplication.instance() or QApplication(sys.argv)
-    _apply_app_theme(app)
+    apply_app_theme(app, ThemeMode(load_theme_preference() or ThemeMode.LIGHT.value))
     app.setApplicationName("Harvester Deployment Manager")
     app.setOrganizationName("harvester-deploy")
     ensure_app_directories()
@@ -803,5 +1155,11 @@ def run_gui(config_path: Path | None = None) -> int:
     window = MainWindow(config_path=config_path)
     if window_icon is not None:
         window.setWindowIcon(window_icon)
-    window.show()
+    mode = window.restore_window_mode()
+    if mode == "fullscreen":
+        window.showFullScreen()
+    elif mode == "maximized":
+        window.showMaximized()
+    else:
+        window.show()
     return app.exec()

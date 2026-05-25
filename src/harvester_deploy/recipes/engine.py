@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 
 import yaml
 
@@ -249,13 +251,35 @@ async def _git_commits_behind(session: SshSession, branch: str) -> int:
         return 999
 
 
+async def _git_head_refs(
+    session: SshSession, branch: str
+) -> tuple[str | None, str | None, str]:
+    remote = f"origin/{branch}"
+    _, stdout, _ = await session.run(
+        f"{session.shell_prelude()}"
+        "head_ref=$(git rev-parse HEAD 2>/dev/null || true)\n"
+        f"remote_ref=$(git rev-parse {remote} 2>/dev/null || git rev-parse {branch} 2>/dev/null || true)\n"
+        'printf "%s\\n%s\\n" "$head_ref" "$remote_ref"\n',
+        check=False,
+        timeout=120,
+    )
+    lines = stdout.strip().splitlines()
+    head_ref = lines[-2].strip() if len(lines) >= 2 else ""
+    remote_ref = lines[-1].strip() if len(lines) >= 1 else ""
+    return head_ref or None, remote_ref or None, remote
+
+
 async def _upgrade_needed(session: SshSession, harvester: Harvester) -> tuple[bool, str]:
     if harvester.upgrade_mode != "git":
         return True, f"upgrade_mode={harvester.upgrade_mode}"
+    head_ref, remote_ref, remote = await _git_head_refs(session, harvester.git_branch)
+    if head_ref and remote_ref and head_ref == remote_ref:
+        return False, f"already up to date with {remote} ({head_ref[:8]})"
     behind = await _git_commits_behind(session, harvester.git_branch)
-    remote = f"origin/{harvester.git_branch}"
     if behind > 0:
         return True, f"{behind} commit(s) behind {remote}"
+    if head_ref and remote_ref and head_ref != remote_ref:
+        return True, f"local HEAD differs from {remote} ({head_ref[:8]} != {remote_ref[:8]})"
     return False, f"already up to date with {remote}"
 
 
@@ -537,6 +561,8 @@ async def run_upgrade(
                 session, harvester, step.id, dry_run=False, force=force
             )
             job.steps.append(result)
+            if on_log and step.id == "upgrade_check" and result.message:
+                on_log(harvester.id, result.message)
             if result.status == StepStatus.FAILED:
                 job.state = JobState.FAILED
                 job.error = f"Step '{result.step_id}' failed: {result.message}"
@@ -576,10 +602,15 @@ async def run_upgrade(
 
 async def run_status(harvester: Harvester, on_log: LogCallback | None = None) -> dict:
     session = SshSession(harvester, on_log=on_log)
+    ping_ok, ping_detail = await _ping_host(harvester.host)
+    ping_detail = ping_detail or ("ok" if ping_ok else "failed")
     try:
         await session.connect()
+        ssh_ok = True
+        ssh_detail = "ok"
         mode = await detect_install_mode(session, harvester)
         version = await _chia_version(session, harvester)
+        ip_address = await _primary_ip(session)
         summary = ""
         if harvester.role == NodeRole.FARMER:
             if mode == InstallMode.PACKAGE:
@@ -608,14 +639,92 @@ async def run_status(harvester: Harvester, on_log: LogCallback | None = None) ->
         return {
             "id": harvester.id,
             "host": harvester.host,
+            "ip_address": ip_address,
+            "ping_ok": ping_ok,
+            "ping_detail": ping_detail,
+            "ssh_ok": ssh_ok,
+            "ssh_detail": ssh_detail,
+            "health_summary": _health_summary(ping_ok=ping_ok, ssh_ok=ssh_ok),
             "role": harvester.role_label,
             "install_mode": mode.value,
             "version": version,
             "commits_behind": behind,
             "summary": summary,
+            "error": "",
+        }
+    except Exception as exc:
+        return {
+            "id": harvester.id,
+            "host": harvester.host,
+            "ip_address": None,
+            "ping_ok": ping_ok,
+            "ping_detail": ping_detail,
+            "ssh_ok": False,
+            "ssh_detail": str(exc),
+            "health_summary": _health_summary(ping_ok=ping_ok, ssh_ok=False),
+            "role": harvester.role_label,
+            "install_mode": InstallMode.UNKNOWN.value,
+            "version": "—",
+            "commits_behind": "—",
+            "summary": "",
+            "error": f"SSH failed: {exc}",
         }
     finally:
         await session.close()
+
+
+def _health_summary(*, ping_ok: bool, ssh_ok: bool) -> str:
+    issues: list[str] = []
+    if not ping_ok:
+        issues.append("PING failed")
+    if not ssh_ok:
+        issues.append("SSH failed")
+    return "; ".join(issues)
+
+
+async def _ping_host(host: str) -> tuple[bool, str]:
+    """Best-effort local ping from the controller machine."""
+    if sys.platform.startswith("win"):
+        command = ["ping", "-n", "1", "-w", "1000", host]
+    else:
+        command = ["ping", "-c", "1", "-W", "1", host]
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=3)
+    except FileNotFoundError:
+        return False, "ping command not found"
+    except TimeoutError:
+        return False, "timed out"
+    except Exception as exc:
+        return False, str(exc)
+
+    output = (stdout or b"").decode(errors="replace")
+    error = (stderr or b"").decode(errors="replace")
+    detail = (output + "\n" + error).strip()
+    if proc.returncode == 0:
+        return True, "ok"
+
+    last_line = detail.splitlines()[-1].strip() if detail else ""
+    return False, last_line or f"ping exit {proc.returncode}"
+
+
+async def _primary_ip(session: SshSession) -> str | None:
+    """Best-effort primary LAN IP for matching farmer summary rows."""
+    try:
+        _, stdout, _ = await session.run(
+            r"""hostname -I 2>/dev/null | awk '{print $1}'""",
+            check=True,
+            timeout=15,
+        )
+        value = stdout.strip()
+        return value or None
+    except Exception:
+        return None
 
 
 async def run_doctor(harvester: Harvester, on_log: LogCallback | None = None) -> dict:

@@ -22,6 +22,7 @@ from harvester_deploy.domain.models import (
     JobState,
     NodeRole,
 )
+from harvester_deploy.gui.styles import ThemeMode, current_theme_mode, theme_colors
 
 CARD_MIN_WIDTH = 280
 CARD_MAX_WIDTH = 400
@@ -43,6 +44,7 @@ class NodeCard(QFrame):
         super().__init__(parent)
         self.harvester = harvester
         self.install_mode: str | None = None
+        self._theme = current_theme_mode()
         self.setObjectName("nodeCard")
         self.setFrameShape(QFrame.Shape.StyledPanel)
         # Fixed width: up to CARD_MAX_WIDTH without stretching to fill the window.
@@ -58,7 +60,6 @@ class NodeCard(QFrame):
         title_font.setPointSize(title_font.pointSize() + 2)
         title_font.setBold(True)
         self._title.setFont(title_font)
-        self._title.setStyleSheet("color: #1a1a1a;")
         header.addWidget(self._title)
         header.addStretch()
         self._network_badge = QLabel(harvester.network_label)
@@ -72,35 +73,44 @@ class NodeCard(QFrame):
         root.addLayout(header)
 
         self._host = QLabel(f"Host: {harvester.host}")
-        self._host.setStyleSheet("color: #666;")
         root.addWidget(self._host)
 
         self._deploy_step = QLabel("")
-        self._deploy_step.setStyleSheet("color: #4a6fa5; font-weight: 600; font-size: 11px;")
         self._deploy_step.hide()
         root.addWidget(self._deploy_step)
 
-        label_style = "color: #495057; font-weight: 600;"
-        value_style = "color: #1a1a1a;"
         grid = QGridLayout()
         grid.setColumnStretch(1, 1)
         self._version_value = QLabel("—")
         self._behind_value = QLabel("—")
         self._status_value = QLabel("—")
+        self._plots_value = QLabel("—")
+        self._size_value = QLabel("—")
+        self._ip_value = QLabel("—")
         self._status_value.setWordWrap(True)
         for row, (lbl, val) in enumerate(
             (
                 ("Version", self._version_value),
                 ("Behind", self._behind_value),
                 ("Status", self._status_value),
+                ("Plots", self._plots_value),
+                ("Size", self._size_value),
+                ("IP", self._ip_value),
             )
         ):
             name = QLabel(lbl)
-            name.setStyleSheet(label_style)
-            val.setStyleSheet(value_style)
             grid.addWidget(name, row, 0)
             grid.addWidget(val, row, 1)
         root.addLayout(grid)
+        self._field_labels = [grid.itemAtPosition(row, 0).widget() for row in range(6)]
+        self._field_values = [
+            self._version_value,
+            self._behind_value,
+            self._status_value,
+            self._plots_value,
+            self._size_value,
+            self._ip_value,
+        ]
 
         self._upgrade_hint = QLabel("")
         self._upgrade_hint.hide()
@@ -144,7 +154,27 @@ class NodeCard(QFrame):
         self._apply_role_style()
         self._apply_network_style()
         self._update_deploy_button()
+        self.setProperty("unhealthy", False)
         self.set_busy(False)
+        self.apply_theme(self._theme)
+
+    def apply_theme(self, theme: ThemeMode) -> None:
+        self._theme = theme
+        colors = theme_colors(theme)
+        self._title.setStyleSheet(f"color: {colors.text_primary};")
+        self._host.setStyleSheet(f"color: {colors.text_muted};")
+        self._deploy_step.setStyleSheet(
+            f"color: {colors.accent}; font-weight: 600; font-size: 11px;"
+        )
+        for label in self._field_labels:
+            label.setStyleSheet(f"color: {colors.text_muted}; font-weight: 600;")
+        for value in self._field_values:
+            value.setStyleSheet(f"color: {colors.text_primary};")
+        self._apply_role_style()
+        self._apply_network_style()
+        self._refresh_status_style()
+        self._refresh_package_note_style()
+        self._refresh_upgrade_hint_style()
 
     def _apply_network_style(self) -> None:
         if self.harvester.network == ChiaNetwork.TESTNET:
@@ -183,11 +213,10 @@ class NodeCard(QFrame):
             self._btn_deploy.setEnabled(not busy)
         if busy:
             self._status_value.setText("Working…")
-            self._status_value.setStyleSheet("color: #4a6fa5; font-weight: 600;")
             self.setProperty("busy", True)
         else:
-            self._status_value.setStyleSheet("color: #1a1a1a;")
             self.setProperty("busy", False)
+        self._refresh_status_style()
         self.style().unpolish(self)
         self.style().polish(self)
 
@@ -224,8 +253,15 @@ class NodeCard(QFrame):
         self._version_value.setText(str(data.get("version", "—")))
         behind = data.get("commits_behind", "—")
         self._behind_value.setText(str(behind))
+        self._set_ip_address(data.get("ip_address"))
+        health_summary = str(data.get("health_summary") or "").strip()
+        error_message = str(data.get("error") or "").strip()
         summary = (data.get("summary") or "").strip()
-        if summary:
+        if health_summary:
+            self._status_value.setText(health_summary)
+        elif error_message:
+            self._status_value.setText(error_message.splitlines()[0])
+        elif summary:
             short = summary.splitlines()[0]
             if len(short) > 72:
                 short = short[:69] + "…"
@@ -236,6 +272,7 @@ class NodeCard(QFrame):
         self._show_upgrade_hint(behind)
         self._show_package_note(mode)
         self._update_deploy_button()
+        self.set_health_state(not health_summary)
         self.set_busy(False)
         self.set_error(False)
 
@@ -261,7 +298,7 @@ class NodeCard(QFrame):
             return
         if n > 0:
             self._upgrade_hint.setText(f"Upgrade available ({n} commit(s) behind)")
-            self._upgrade_hint.setStyleSheet("color: #c0392b; font-weight: bold;")
+            self._refresh_upgrade_hint_style()
             self._upgrade_hint.show()
         else:
             self._upgrade_hint.hide()
@@ -269,7 +306,7 @@ class NodeCard(QFrame):
     def _package_note_reserved_height(self) -> int:
         probe = QLabel(_PACKAGE_NOTE_TEXT)
         probe.setWordWrap(True)
-        probe.setStyleSheet("color: #8a6d3b; font-size: 11px;")
+        probe.setStyleSheet("font-size: 11px;")
         probe.setFont(self.font())
         width = CARD_MAX_WIDTH - 24
         height = probe.heightForWidth(width)
@@ -280,23 +317,38 @@ class NodeCard(QFrame):
         self._package_note.show()
         if show_text:
             self._package_note.setText(_PACKAGE_NOTE_TEXT)
-            self._package_note.setStyleSheet("color: #8a6d3b; font-size: 11px;")
         else:
             self._package_note.setText("")
-            self._package_note.setStyleSheet("font-size: 11px;")
+        self._refresh_package_note_style()
 
     def _show_package_note(self, mode: str) -> None:
         self._set_package_note_row(show_text=mode == InstallMode.PACKAGE.value)
 
+    def _set_ip_address(self, ip_address: str | None) -> None:
+        self._ip_value.setText(ip_address or "—")
+
+    def apply_telemetry(
+        self,
+        *,
+        ip_address: str | None = None,
+        plot_count: int | None = None,
+        plot_size: str | None = None,
+    ) -> None:
+        self._set_ip_address(ip_address)
+        self._plots_value.setText(f"{plot_count:,}" if plot_count is not None else "—")
+        self._size_value.setText(plot_size or "—")
+
     def set_error(self, message: str | bool) -> None:
         if message is False:
             self.setProperty("failed", False)
+            self._refresh_status_style()
             self.style().unpolish(self)
             self.style().polish(self)
             return
         self.setProperty("failed", True)
         self._status_value.setText(str(message))
         self.set_busy(False)
+        self._refresh_status_style()
         self.style().unpolish(self)
         self.style().polish(self)
 
@@ -307,3 +359,32 @@ class NodeCard(QFrame):
             self.set_error(False)
         else:
             self.set_error("SSH: failed")
+
+    def set_health_state(self, healthy: bool) -> None:
+        self.setProperty("unhealthy", not healthy)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def _refresh_status_style(self) -> None:
+        colors = theme_colors(self._theme)
+        if self.property("busy"):
+            self._status_value.setStyleSheet(
+                f"color: {colors.accent}; font-weight: 600;"
+            )
+        else:
+            self._status_value.setStyleSheet(f"color: {colors.text_primary};")
+
+    def _refresh_package_note_style(self) -> None:
+        colors = theme_colors(self._theme)
+        if self._package_note.text():
+            self._package_note.setStyleSheet(
+                f"color: {colors.warning}; font-size: 11px;"
+            )
+        else:
+            self._package_note.setStyleSheet(f"color: {colors.text_muted}; font-size: 11px;")
+
+    def _refresh_upgrade_hint_style(self) -> None:
+        colors = theme_colors(self._theme)
+        self._upgrade_hint.setStyleSheet(
+            f"color: {colors.danger}; font-weight: bold;"
+        )

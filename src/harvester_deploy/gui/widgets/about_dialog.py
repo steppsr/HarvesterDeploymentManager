@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from harvester_deploy import __version__
 from harvester_deploy.gui.resources import app_icon, icon_path
+from harvester_deploy.gui.styles import current_theme_mode, theme_colors
 
 
 class AboutDialog(QDialog):
@@ -27,6 +28,7 @@ class AboutDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
+        colors = theme_colors(current_theme_mode())
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 72, 0)
@@ -63,11 +65,11 @@ from your Windows machine.</p>
 </ul>
 <p style="margin-top:16px;"><b>Created by Steve Stepp</b> (steppsr)<br>
 For my personal Chia farm</p>
-<p style="color:#6c757d; margin-top:12px;">
+<p style="color:{colors.text_muted}; margin-top:12px;">
 Copyright © 2026 Steve Stepp<br>
 Licensed under the Apache License, Version 2.0.
 See the <b>LICENSE</b> file in the project repository for full terms.</p>
-<p style="color:#6c757d; font-size:11px; margin-top:8px;">
+<p style="color:{colors.text_muted}; font-size:11px; margin-top:8px;">
 This is a personal, open-source project and is not affiliated with or
 endorsed by Chia Network Inc.</p>
 """
@@ -75,7 +77,7 @@ endorsed by Chia Network Inc.</p>
         body.setWordWrap(True)
         body.setTextFormat(Qt.TextFormat.RichText)
         body.setOpenExternalLinks(True)
-        body.setStyleSheet("color: #1a1a1a;")
+        body.setStyleSheet(f"color: {colors.text_primary};")
         header.addWidget(body, stretch=1)
         layout.addLayout(header)
 
