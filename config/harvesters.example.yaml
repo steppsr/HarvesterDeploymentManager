@@ -11,6 +11,7 @@ defaults:
   upgrade_mode: git
   enabled: true
   role: harvester
+  network: mainnet
 
 harvesters:
   - id: tarkin
@@ -60,4 +61,12 @@ harvesters:
     display_name: JABBA
     host: jabba
     role: farmer
+    network: mainnet
     last_known_version: "2.7.1"
+
+  # Example testnet-labeled farmer (optional; config dir usually stays mainnet)
+  # - id: lobot
+  #   display_name: LOBOT
+  #   host: 192.168.1.253
+  #   role: farmer
+  #   network: testnet

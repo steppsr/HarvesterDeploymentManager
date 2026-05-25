@@ -30,6 +30,13 @@ class NodeRole(str, Enum):
     FARMER = "farmer"
 
 
+class ChiaNetwork(str, Enum):
+    """Chia blockchain network for config paths and fleet grouping."""
+
+    MAINNET = "mainnet"
+    TESTNET = "testnet"
+
+
 class InstallMode(str, Enum):
     """How Chia is installed on the remote host."""
 
@@ -46,6 +53,7 @@ class Harvester:
     display_name: str
     host: str
     role: NodeRole = NodeRole.HARVESTER
+    network: ChiaNetwork = ChiaNetwork.MAINNET
     ssh_port: int = 22
     ssh_user: str = "steve"
     ssh_key_path: str = "~/.ssh/id_ed25519"
@@ -66,6 +74,10 @@ class Harvester:
     @property
     def role_label(self) -> str:
         return self.role.value
+
+    @property
+    def network_label(self) -> str:
+        return "Mainnet" if self.network == ChiaNetwork.MAINNET else "Testnet"
 
 
 @dataclass

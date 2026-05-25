@@ -5,7 +5,12 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
-from harvester_deploy.domain.models import Harvester, NodeRole
+from harvester_deploy.domain.models import ChiaNetwork, Harvester, NodeRole
+from harvester_deploy.domain.network import parse_network
+from harvester_deploy.persistence.paths import (  # noqa: F401 — re-exported
+    default_config_path,
+    default_recipe_path,
+)
 
 
 class DefaultsModel(BaseModel):
@@ -19,6 +24,7 @@ class DefaultsModel(BaseModel):
     upgrade_mode: str = "git"
     enabled: bool = True
     role: str = "harvester"
+    network: str = "mainnet"
 
 
 class HarvesterEntry(BaseModel):
@@ -37,6 +43,7 @@ class HarvesterEntry(BaseModel):
     enabled: bool | None = None
     last_known_version: str | None = None
     farmer_host: str | None = None
+    network: str | None = None
 
     @field_validator("role")
     @classmethod
@@ -46,6 +53,16 @@ class HarvesterEntry(BaseModel):
         allowed = {r.value for r in NodeRole}
         if v not in allowed:
             raise ValueError(f"role must be one of {allowed}, got '{v}'")
+        return v
+
+    @field_validator("network")
+    @classmethod
+    def validate_network(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        allowed = {n.value for n in ChiaNetwork}
+        if v not in allowed:
+            raise ValueError(f"network must be one of {allowed}, got '{v}'")
         return v
 
 
@@ -63,18 +80,6 @@ def _parse_role(value: str) -> NodeRole:
     return NodeRole(value)
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[3]
-
-
-def default_config_path() -> Path:
-    return _project_root() / "config" / "harvesters.yaml"
-
-
-def default_recipe_path(recipe: str = "chia-upgrade-default") -> Path:
-    return _project_root() / "config" / "recipes" / f"{recipe}.yaml"
-
-
 def load_config(path: Path | None = None) -> AppConfig:
     config_path = path or default_config_path()
     if not config_path.is_file():
@@ -87,12 +92,15 @@ def load_config(path: Path | None = None) -> AppConfig:
     for entry in parsed.harvesters:
         d = parsed.defaults
         role_str = entry.role if entry.role is not None else d.role
+        network_str = entry.network if entry.network is not None else d.network
+        network = parse_network(network_str)
         harvesters.append(
             Harvester(
                 id=entry.id,
                 display_name=entry.display_name or entry.id.upper(),
                 host=entry.host,
                 role=_parse_role(role_str),
+                network=network,
                 ssh_port=entry.ssh_port if entry.ssh_port is not None else d.ssh_port,
                 ssh_user=entry.ssh_user or d.ssh_user,
                 ssh_key_path=entry.ssh_key_path or d.ssh_key_path,

@@ -1,6 +1,6 @@
 # Harvester Deployment Tool
 
-Deploy [Chia](https://www.chia.net/) upgrades from a **Windows 11** controller to **Ubuntu** machines on your local network over **SSH** — dedicated harvesters and your **farmer** node (e.g. JABBA). Phase 1.5 extends the CLI; a desktop GUI is planned for Phase 2.
+Deploy [Chia](https://www.chia.net/) upgrades from a **Windows 11** controller to **Ubuntu** machines on your local network over **SSH** — dedicated harvesters and your **farmer** node (e.g. JABBA). Use the **`hdm`** CLI for scripting or **`harvest-deploy`** for the desktop dashboard (Phase 2).
 
 ## Features
 
@@ -14,6 +14,8 @@ Deploy [Chia](https://www.chia.net/) upgrades from a **Windows 11** controller t
 - Git-based upgrade recipe (`git checkout latest`, `install.sh`, `chia init`, start)
 - Parallel deployments, live logs, JSON summaries under `deployments/`
 - Recovery mode for interrupted upgrades; automatic `chia init --fix-ssl-permissions`
+
+- **`--quiet` / `-q`** — suppress per-step log lines; show only the final table or doctor panels
 
 ## Requirements
 
@@ -36,8 +38,8 @@ Deploy [Chia](https://www.chia.net/) upgrades from a **Windows 11** controller t
 The tool auto-detects **source** vs **package** per host. **`chia farm summary` runs on farmer nodes only** (full fleet view). Harvester nodes report version, git drift, and harvester process status instead.
 
 ```powershell
-harvester-deploy doctor --target jabba
-harvester-deploy status --target jabba
+hdm doctor --target jabba
+hdm status --target jabba
 ```
 
 ## Download and install
@@ -58,15 +60,79 @@ python -m venv .venv
 
 ### 3. Install the package
 
+CLI only:
+
 ```powershell
 python -m pip install -e .
+```
+
+CLI + GUI:
+
+```powershell
+python -m pip install -e ".[gui]"
 ```
 
 Verify:
 
 ```powershell
-harvester-deploy --help
+hdm --help
+harvest-deploy --help
 ```
+
+### Command names
+
+| Command | Role |
+| ------- | ---- |
+| `hdm` | CLI — `test-ssh`, `status`, `doctor`, `deploy` |
+| `harvest-deploy` | Desktop GUI — fleet dashboard (milestone 2a+) |
+
+The pip package name stays `harvester-deploy`.
+
+### Desktop GUI (milestone 2a)
+
+```powershell
+harvest-deploy
+```
+
+- Grid of **node cards** (network + role + install-mode badges)
+- Filter: **All** / **Harvesters** / **Farmers** / **Mainnet** / **Testnet**
+- **Refresh fleet** on startup and from the **Nodes** tab (same data as `hdm status`)
+- Per card: **Doctor**, **Test SSH**, **History**, **Log**, **Deploy**
+- **Upgrade available** hint when git is behind `origin/latest`
+
+**Milestone 2b** adds **Deploy…** (targets + advanced options), confirm dialog, **Logs** tab, per-card **Log**, per-card **Deploy**, and a completion summary.
+
+**Milestone 2c** adds **Fleet → Manage inventory…** — add, edit, and remove nodes; validation; **Test SSH** in the editor; optional **keyring** passphrases; saves to SQLite (`data/hdm.db`) and syncs `config/harvesters.yaml` for the CLI. **Choose config file…** and **Import from YAML…** use a file picker; **Open config folder** opens the active config directory in Explorer.
+
+**Milestone 2d** adds **deploy history** — each deploy (and dry run) is stored in SQLite; **Fleet → Deploy history…** or per-card **History** shows a timeline per node (including skipped up-to-date runs). Past `deployments/*/summary.json` files can be imported on first open or via **Import JSON…**. The CLI still writes JSON summaries for scripting.
+
+**Milestone 2e** adds **Mainnet / Testnet** badges on cards, **Show** filters (including Mainnet only / Testnet only), tabbed layout (**Nodes** / **Fleet summary** / **Logs**), app icon, clean PyInstaller builds, and a true empty first-run experience for the packaged `.exe`.
+
+### Mainnet / Testnet per node
+
+Set `network: mainnet` or `network: testnet` in `harvesters.yaml` (or in **Manage inventory**). This is for **badges and filters only** — it does not change `chia_config_dir` (most installs keep `~/.chia/mainnet/config` even on testnet). Nodes without `network` default to **mainnet**.
+
+### Build Windows GUI executable
+
+```powershell
+pip install -e ".[gui]"
+pip install pyinstaller
+.\scripts\build-gui.ps1
+```
+
+Output: `dist\HarvesterDeploymentManager.exe`. Run `python scripts\make_icon.py` first if icons are missing.
+
+**Installed app config** (not the PyInstaller temp folder):
+
+| Path | Purpose |
+|------|---------|
+| `%LOCALAPPDATA%\HarvesterDeploymentManager\config\harvesters.yaml` | Default YAML location (starts missing on a brand-new install until you import or save inventory) |
+| `%LOCALAPPDATA%\HarvesterDeploymentManager\data\hdm.db` | Fleet inventory SQLite — **still used if you delete YAML but leave the DB** |
+| `%LOCALAPPDATA%\HarvesterDeploymentManager\settings.yaml` | Optional path you picked with **Choose config file…** or **Import from YAML…** (not your dev repo unless you chose that file) |
+
+The packaged `.exe` starts with **no predefined nodes**. To use an existing fleet file, choose **Fleet → Choose config file…** or **Manage inventory → Import from YAML…** and point at your `harvesters.yaml`.
+
+The release `.exe` does **not** embed `e:\DEV\HarvesterDeploymentTool`. To fully reset the installed app, delete the whole `%LOCALAPPDATA%\HarvesterDeploymentManager` folder, then start the exe again.
 
 ## SSH setup (one-time per harvester)
 
@@ -76,7 +142,7 @@ The tool does **not** store passwords. Use an SSH key on your Windows machine.
 
 ```powershell
 # Only if you do not already have a key:
-ssh-keygen -t ed25519 -C "harvester-deploy@your-pc"
+ssh-keygen -t ed25519 -C "hdm@your-pc"
 ```
 
 Default path: `C:\Users\<you>\.ssh\id_ed25519`
@@ -156,23 +222,23 @@ Run these in order from the project directory:
 
 ```powershell
 # 1) SSH connectivity
-harvester-deploy test-ssh
+hdm test-ssh
 
 # 2) Installed Chia version per host
-harvester-deploy status
+hdm status
 
 # 3) Health checks (paths, git, version)
-harvester-deploy doctor
+hdm doctor
 
 # 4) Dry run — lists steps, no remote changes
-harvester-deploy deploy --target all --parallel 2 --dry-run
+hdm deploy --target all --parallel 2 --dry-run
 ```
 
 Test a single host first:
 
 ```powershell
-harvester-deploy test-ssh --target my-harvester
-harvester-deploy deploy --target my-harvester --dry-run
+hdm test-ssh --target my-harvester
+hdm deploy --target my-harvester --dry-run
 ```
 
 ## Deploying an upgrade
@@ -181,31 +247,37 @@ harvester-deploy deploy --target my-harvester --dry-run
 
 ```powershell
 # One node
-harvester-deploy deploy --target tarkin
+hdm deploy --target tarkin
 
 # Harvesters only (excludes farmer node)
-harvester-deploy deploy --target harvesters --parallel 2
+hdm deploy --target harvesters --parallel 2
 
 # Farmer machine only
-harvester-deploy deploy --target jabba
+hdm deploy --target jabba
 
 # Several ids
-harvester-deploy deploy --target tarkin,padme --parallel 2
+hdm deploy --target tarkin,padme --parallel 2
 
 # Everything enabled in harvesters.yaml
-harvester-deploy deploy --target all --parallel 2
+hdm deploy --target all --parallel 2
 
 # Force full upgrade even when git reports up to date
-harvester-deploy deploy --target tarkin --force
+hdm deploy --target tarkin --force
 ```
 
 If git is already on `origin/latest`, deploy **skips** stop/install and reports `skipped (up to date)` unless you pass `--force`.
 
 Exit codes: `0` = all succeeded, `1` = all failed, `2` = partial failure.
 
-Logs are written to `deployments/<timestamp>/summary.json`.
+Logs are written to `deployments/<timestamp>/summary.json` (also recorded in `data/hdm.db` when using the GUI or CLI `deploy`).
 
-`harvester-deploy status` shows a **Behind** column (commits behind `origin/latest`). `doctor` includes `git_behind` and `farmer_host` when set.
+`hdm status` shows a **Behind** column (commits behind `origin/latest`). `doctor` includes `git_behind` and `farmer_host` when set.
+
+For table-only output without per-host step logs:
+
+```powershell
+hdm status --quiet
+```
 
 ## Project layout
 

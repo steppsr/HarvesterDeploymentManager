@@ -1,3 +1,4 @@
-"""Chia harvester deployment controller (Phase 1)."""
+"""Chia harvester deployment controller."""
 
-__version__ = "0.1.0"
+# Keep this in sync with `pyproject.toml`.
+__version__ = "0.3.4"

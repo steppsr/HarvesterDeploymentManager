@@ -6,6 +6,7 @@ from pathlib import Path
 import asyncssh
 
 from harvester_deploy.domain.models import Harvester, LogCallback
+from harvester_deploy.persistence.keyring_support import get_passphrase
 
 
 def expand_key_path(path: str) -> str:
@@ -29,13 +30,21 @@ class SshSession:
         if not Path(key_path).is_file():
             raise FileNotFoundError(f"SSH key not found: {key_path}")
 
-        self._conn = await asyncssh.connect(
-            self.harvester.host,
-            port=self.harvester.ssh_port,
-            username=self.harvester.ssh_user,
-            client_keys=[key_path],
-            known_hosts=None,
-        )
+        connect_kwargs: dict = {
+            "host": self.harvester.host,
+            "port": self.harvester.ssh_port,
+            "username": self.harvester.ssh_user,
+            "known_hosts": None,
+        }
+        passphrase = get_passphrase(key_path)
+        if passphrase:
+            connect_kwargs["client_keys"] = [
+                asyncssh.import_private_key(key_path, passphrase=passphrase)
+            ]
+        else:
+            connect_kwargs["client_keys"] = [key_path]
+
+        self._conn = await asyncssh.connect(**connect_kwargs)
         self._log(f"Connected to {self.harvester.ssh_user}@{self.harvester.host}")
 
     async def close(self) -> None:

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from harvester_deploy.domain.models import LogCallback
 from rich.console import Console
-from rich.live import Live
 from rich.panel import Panel
-from rich.text import Text
 
 
 class ConsoleReporter:
@@ -23,3 +22,10 @@ class ConsoleReporter:
         self.console.print(
             Panel(body, title=f"{harvester_id}: {state}", border_style=style)
         )
+
+
+def log_callback(quiet: bool = False) -> LogCallback | None:
+    """Return a console log handler, or None when --quiet suppresses step output."""
+    if quiet:
+        return None
+    return ConsoleReporter().log

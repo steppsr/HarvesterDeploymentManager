@@ -11,3 +11,4 @@ deployments/
 
 # Local inventory (hostnames, IPs, keys paths) — use harvesters.example.yaml
 config/harvesters.yaml
+data/hdm.db

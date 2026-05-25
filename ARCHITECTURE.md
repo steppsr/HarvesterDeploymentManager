@@ -2,7 +2,7 @@
 
 A modular, **Python-centric controller** on Windows 11 orchestrates **agentless SSH** upgrades on six Ubuntu harvesters on the local LAN. Phase 1 delivers a reusable library and CLI; Phase 2 adds a desktop GUI that reuses the same core—no rewrite.
 
-**Related docs:** `How to Upgrade Chia.md` (manual upgrade steps), `Architecture.html` (visual summary).
+**Related docs:** `How to Upgrade Chia.md` (manual upgrade steps), `docs/PHASE_2_Planning.md` (Phase 2 decisions), `Architecture.html` (visual summary).
 
 ---
 
@@ -12,7 +12,7 @@ A modular, **Python-centric controller** on Windows 11 orchestrates **agentless 
 | Phase       | Goal                                                                                                                    |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------- |
 | **Phase 1** | From Windows: SSH to one or all harvesters, run the upgrade pipeline, stream progress, report per-host success/failure. |
-| **Phase 2** | GUI: manage harvester inventory, deploy one or all, separate live monitor per harvester, deployment history.            |
+| **Phase 2** | **Harvester Deployment Manager** (GUI): dashboard, deploy, live logs; complements CLI. See [Phase 2](#phase-2--harvester-deployment-manager-gui). |
 
 
 **Scale today:** 6 harvesters (see [Inventory](#harvester-inventory)). Design for adding hosts without code changes.
@@ -252,6 +252,7 @@ Source: `How to Upgrade Chia.md`. Encoded as a **versioned pipeline** the deploy
 - `--parallel 2` — cap concurrent upgrades (default 2)
 - `--dry-run` — print steps without mutating remotes
 - `--recipe default` — future: alternate recipes
+- `--quiet` / `-q` — suppress step logs; final table/panels only
 
 **Outputs:** console stream per host; JSON summary under `deployments/<timestamp>/`; exit code 0 / partial / full failure.
 
@@ -274,50 +275,175 @@ Source: `How to Upgrade Chia.md`. Encoded as a **versioned pipeline** the deploy
 2. Upgrade **all six** with `--parallel 2`; summary shows before/after version per host.
 3. Failed run reports failing step + remote log snippet.
 
-### Phase 1.5 (recommended before GUI)
+### Phase 1.5 — Complete
 
-- `status` — version + process state only
-- `doctor` — SSH, paths, git clean, optional farmer ping
+- Skip deploy when already on `origin/latest` (`--force`)
+- Backup `~/.chia/mainnet/config`
+- Farmer / harvester roles, target groups, package-install detection
+- `chia farm summary` on farmer nodes only
 
-### Phase 2 — Desktop controller
+### CLI — `--quiet` (v0.2.1+)
 
-**Deliverables**
+| Item | Status |
+| ---- | ------ |
+| **`--quiet` / `-q`** on `test-ssh`, `status`, `doctor`, `deploy` | **Done** |
 
-- Harvester CRUD + **Test SSH** on add
-- Dashboard: six cards (status, version, last deploy)
-- **Deploy one** / **Deploy all**; cancel where SSH session allows
-- Per-harvester panel: live log, current step, progress
-- SQLite deployment history
+- **Default:** stream intermediate lines via `ConsoleReporter` (`{id} \| step / remote output`).
+- **`--quiet`:** `on_log` is omitted; only the final Rich table (or doctor panels) is printed. `deploy` still writes JSON under `deployments/`.
 
-**Success criteria**
+**Example** — `hdm status --quiet` should print only the status table (no per-host SSH/git/chia log lines):
 
-- UI stays responsive during `install.sh`
-- Add 7th harvester via config/UI only
+```text
+                           Node status
+┏━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ ID        ┃ Role      ┃ Install ┃ Host      ┃ Version ┃ Behind ┃
+┡━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ jabba     │ farmer    │ package │ jabba     │ 2.7.1   │ -      │
+│ tarkin    │ harvester │ source  │ tarkin    │ 2.7.1   │ 0      │
+...
+└───────────┴───────────┴─────────┴───────────┴─────────┴────────┘
+```
+
+**Implementation:** `log_callback(quiet)` in `reporting/console.py` returns `None` for `on_log` when quiet.
 
 ---
 
-## Project layout (target)
+## Phase 2 — Harvester Deployment Manager (GUI)
+
+**Source of decisions:** [docs/PHASE_2_Planning.md](docs/PHASE_2_Planning.md)
+
+### Product summary
+
+| Topic | Decision |
+|-------|----------|
+| **Audience** | Personal tool (author only for v1) |
+| **Platform** | Cross-platform (Windows, Linux, macOS) — develop on Windows 11 first |
+| **CLI relationship** | GUI **complements** `hdm`; both use the same Python core |
+| **App title** | **Harvester Deployment Manager** |
+| **CLI entrypoint** | `hdm` via `pip install` (short command for scripting) |
+| **GUI entrypoint** | `harvest-deploy` via PyInstaller and/or `pip install` (Phase 2) |
+| **Release target** | **v0.3.0** (iterate before a future v1.0 “major” GUI release) |
+
+### MVP scope (v0.3.0)
+
+Minimum shippable GUI (**history follows in later Phase 2 milestones**):
+
+- **Dashboard** — grid of node cards
+- **Deploy** — one / groups / all (match CLI targets)
+- **Live logs** — dedicated Logs tab with per-node focus
+
+Inventory CRUD, SQLite history, and PyInstaller polish follow in later milestones below.
+
+### Technology
+
+| Area | Choice |
+|------|--------|
+| UI framework | **PySide6** |
+| Distribution | **PyInstaller** `.exe` (plus dev install from source) |
+| Concurrency | **Single process**; `asyncio` orchestrator on a **Qt background thread**; signals/slots to UI |
+| Core reuse | No subprocess CLI; call `harvester_deploy` library directly |
+| SSH passphrases | **`keyring`** in GUI v1 (milestone 2c) |
+| About / version | Icon + version from `pyproject.toml` |
+
+### UI layout
+
+- **Nodes tab** — action bar + grid of cards; filters: All / Harvesters / Farmers / Mainnet / Testnet
+- **Badges** on each card: network (`mainnet` / `testnet`), role (`harvester` / `farmer`), install mode (`source` / `package`)
+- **Logs tab** — per-card **Log** button focuses one node’s output (autoscroll v1)
+- **Fleet summary tab** — farmer `chia farm summary`; Deploy disabled on package installs with “Package install — upgrade via .deb”
+- **Upgrade available** — show commits behind `origin/latest` on card when &gt; 0
+
+### Operations (deploy and refresh)
+
+| Feature | v0.3.0 behavior |
+|---------|----------------|
+| Deploy targets | Same as CLI: `all`, `harvesters`, `farmers`, single node |
+| Advanced options | Dialog: parallel, dry-run, force |
+| Pre-deploy | **Confirmation modal** with checklist |
+| Cancel deploy | **Not in v1** |
+| Refresh | **On startup** + manual **Refresh fleet** |
+| Per-card actions | **Doctor**, **Test SSH**, **History**, **Log**, **Deploy** |
+| Deploy complete | In-app notification; summary table; failed cards **red** |
+| Progress | Current recipe **step name** + **indeterminate** bar |
+
+### Inventory and config (milestone 2c)
+
+| Topic | Decision |
+|-------|----------|
+| Edit in GUI | Yes — add / edit / remove nodes |
+| Required fields | `id`, `host`, `role`, `ssh_user`, `ssh_key_path`, `chia_root`, `chia_config_dir`; `farmer_host` for harvesters |
+| Test SSH | On save and standalone Test button |
+| Validation | Duplicate ids, valid role, farmer_host only on harvesters |
+| Import/export YAML | Import from chosen YAML file; no export UI |
+| Storage | **SQLite** canonical; **sync to `harvesters.yaml`** on save for CLI |
+| SSH key | File picker; default `~/.ssh/id_ed25519`; **keyring** for passphrase |
+| Utilities | **Choose config file**, **Open config folder** |
+
+### History (milestone 2d)
+
+| Topic | Decision |
+|-------|----------|
+| SQLite | Deploy runs metadata |
+| JSON | Keep `deployments/*.json` for CLI |
+| UI | Timeline **per node** |
+| Retention | Keep all runs; include **skipped** (up-to-date) deploys |
+
+### Out of scope for Phase 2 v1
+
+- Cancel mid-deploy; deb/apt upgrade recipe; YAML export; log pause/copy/save; OS toasts
+
+### Implementation milestones
+
+| Milestone | Version | Delivers |
+|-----------|---------|----------|
+| **2a — Shell** | v0.3.0 | **Done** — main window, cards, badges, filters, refresh/doctor/test-ssh (`harvest-deploy`) |
+| **2b — Deploy** | v0.3.0 | **Done** — deploy wizard, confirm modal, live log panel, progress bar, summary dialog, per-card deploy |
+| **2c — Inventory** | v0.3.1 | **Done** — CRUD, validation, SQLite + YAML sync, keyring, open config folder |
+| **2d — History** | v0.3.2 | **Done** — deploy runs in SQLite, per-node timeline, JSON import |
+| **2e — Polish** | v0.3.3 | **Done** — farmer fleet summary tab, Mainnet/Testnet badges + filters, log/history actions, icon, clean PyInstaller build, smoke tests |
+
+### Phase 2 success criteria
+
+1. UI responsive during `install.sh`.
+2. Deploy one / harvesters / farmers / all with live logs.
+3. JABBA shown as farmer/package; deploy disabled; fleet summary available.
+4. (2c+) Add 7th node from GUI.
+5. (2d+) Per-node deploy history timeline.
+6. Packaged Windows `.exe` starts empty and uses a persistent user config/data folder.
+
+### Planned package layout (Phase 2)
+
+```text
+src/harvester_deploy/
+  gui/                 # new — harvest-deploy entry, main_window, widgets, workers.py
+  persistence/
+    db.py              # new — SQLite
+assets/                # app icon assets
+%LOCALAPPDATA%/HarvesterDeploymentManager/
+  config/harvesters.yaml
+  data/hdm.db
+  deployments/
+```
+
+---
+
+## Project layout (current)
 
 ```text
 HarvesterDeploymentTool/
   pyproject.toml
+  assets/                  # app icon source files
   config/
-    harvesters.example.yaml
-    harvesters.yaml              # local; gitignore if needed
-    recipes/
-      chia-upgrade-default.yaml
   src/harvester_deploy/
-    domain/
-    ssh/
-    recipes/
-    orchestrator/
-    persistence/
-    cli.py
-  deployments/                   # run logs + JSON summaries
+    gui/                 # PySide6 — harvest-deploy
+  scripts/               # icon + build helpers
+  deployments/
   tests/
   docs/
+    PHASE_2_Planning.md
     ARCHITECTURE.md
-    How to Upgrade Chia.md
+    RELEASE_v0.1.0.md
+    RELEASE_v0.2.0.md
 ```
 
 ---
@@ -385,9 +511,8 @@ Replace `HOSTNAME` with each row above (e.g. `kinnakeet`). First visit may ask `
 
 ## Why this fits
 
-- **Phase 1** is a small, testable core aligned with your real upgrade commands
-- **Phase 2** is a new front-end, not a fork of scripts
-- **Six harvesters** stay simple: no cluster manager, no per-host daemons
-- **Extensible:** new recipe, new host row in YAML, optional farmer checks
+- **Phase 1 / 1.5** — proven CLI and library on a real six-harvester + farmer fleet
+- **Phase 2** — PySide6 front-end on the same engine; CLI remains for scripting
+- **Personal scope** — Phase 2 now covers daily-use GUI workflows: inventory, deploy, history, and a packaged Windows app
 
-**Next implementation steps:** set up SSH keys on all six hosts; verify `ssh -i ~/.ssh/id_ed25519 steve@192.168.1.137` without a password prompt; confirm `~/chia-blockchain` on TARKIN; copy `harvesters.example.yaml` → `harvesters.yaml`; implement recipe steps 1–11 against TARKIN, then roll to all.
+**Phase 2 status:** complete through milestone **2e**. Next work can focus on post-Phase-2 ideas such as package/deb deploy support, richer log tools, cancel, and broader cross-platform packaging.

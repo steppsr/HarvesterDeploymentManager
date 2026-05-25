@@ -13,17 +13,18 @@ from harvester_deploy.domain.models import JobState
 from harvester_deploy.orchestrator.runner import exit_code_for_jobs, run_deployments
 from harvester_deploy.persistence.config import load_config, resolve_targets
 from harvester_deploy.recipes.engine import load_recipe, run_doctor, run_status, test_ssh
-from harvester_deploy.reporting.console import ConsoleReporter
+from harvester_deploy.reporting.console import log_callback
 from harvester_deploy.reporting.summary import write_summary
 
 _TARGET_HELP = (
     "Node id, comma-separated ids, or a group: "
     "all | harvesters | farmers"
 )
+_QUIET_HELP = "Suppress per-step logs; show final results only."
 
 app = typer.Typer(
-    name="harvester-deploy",
-    help="Deploy Chia upgrades to harvester and farmer nodes over SSH.",
+    name="hdm",
+    help="Harvester Deployment Manager — deploy Chia upgrades over SSH.",
     no_args_is_help=True,
 )
 console = Console()
@@ -42,15 +43,25 @@ def _load_targets(config_path: Optional[Path], target: str):
 def cmd_test_ssh(
     target: str = typer.Option("all", "--target", "-t", help=_TARGET_HELP),
     config: Optional[Path] = typer.Option(None, "--config", "-c", help="harvesters.yaml path"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help=_QUIET_HELP),
 ) -> None:
     """Test SSH connectivity to node(s)."""
     _, targets = _load_targets(config, target)
-    reporter = ConsoleReporter()
+    on_log = log_callback(quiet)
 
     async def _go():
         results = []
         for h in targets:
-            ok = await test_ssh(h, on_log=reporter.log)
+            ok, err = await test_ssh(h, on_log=on_log)
+            if not ok and err is not None and on_log:
+                from harvester_deploy.ssh.errors import explain_ssh_failure
+                from harvester_deploy.ssh.client import expand_key_path
+
+                msg, _ = explain_ssh_failure(
+                    err, host=h.host, key_path=expand_key_path(h.ssh_key_path)
+                )
+                for line in msg.splitlines():
+                    on_log(h.id, line)
             results.append((h.id, h.role_label, ok))
         return results
 
@@ -70,13 +81,14 @@ def cmd_test_ssh(
 def cmd_status(
     target: str = typer.Option("all", "--target", "-t", help=_TARGET_HELP),
     config: Optional[Path] = typer.Option(None, "--config", "-c"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help=_QUIET_HELP),
 ) -> None:
     """Report chia version and git drift per node."""
     _, targets = _load_targets(config, target)
-    reporter = ConsoleReporter()
+    on_log = log_callback(quiet)
 
     async def _go():
-        return [await run_status(h, on_log=reporter.log) for h in targets]
+        return [await run_status(h, on_log=on_log) for h in targets]
 
     rows = _run(_go())
     table = Table(title="Node status")
@@ -102,13 +114,14 @@ def cmd_status(
 def cmd_doctor(
     target: str = typer.Option("all", "--target", "-t", help=_TARGET_HELP),
     config: Optional[Path] = typer.Option(None, "--config", "-c"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help=_QUIET_HELP),
 ) -> None:
     """Run health checks: SSH, chia root, git, version, commits behind."""
     _, targets = _load_targets(config, target)
-    reporter = ConsoleReporter()
+    on_log = log_callback(quiet)
 
     async def _go():
-        return [await run_doctor(h, on_log=reporter.log) for h in targets]
+        return [await run_doctor(h, on_log=on_log) for h in targets]
 
     for checks in _run(_go()):
         title = f"{checks['id']} ({checks.get('role', '?')})"
@@ -128,17 +141,19 @@ def cmd_deploy(
     ),
     recipe: str = typer.Option("chia-upgrade-default", "--recipe", "-r"),
     config: Optional[Path] = typer.Option(None, "--config", "-c"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help=_QUIET_HELP),
 ) -> None:
     """Run the Chia upgrade recipe on node(s)."""
     _, targets = _load_targets(config, target)
     rec = load_recipe(recipe)
-    reporter = ConsoleReporter()
+    on_log = log_callback(quiet)
 
-    if dry_run:
+    if dry_run and not quiet:
         console.print("[yellow]DRY RUN[/yellow] — no remote changes")
+        dry_log = log_callback(False)
         for h in targets:
             for step in rec.steps:
-                reporter.log(
+                dry_log(
                     h.id,
                     f"[dry-run] [{h.role_label}] {step.id}: {step.description}",
                 )
@@ -150,7 +165,7 @@ def cmd_deploy(
             parallel=parallel,
             dry_run=dry_run,
             force=force,
-            on_log=reporter.log,
+            on_log=on_log,
         )
 
     jobs = _run(_go())
@@ -178,7 +193,8 @@ def cmd_deploy(
             note,
         )
     console.print(table)
-    console.print(f"Summary written to [bold]{summary_path}[/bold]")
+    if not quiet:
+        console.print(f"Summary written to [bold]{summary_path}[/bold]")
 
     code = exit_code_for_jobs(jobs)
     if code:

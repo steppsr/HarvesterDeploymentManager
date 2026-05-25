@@ -708,15 +708,18 @@ async def run_doctor(harvester: Harvester, on_log: LogCallback | None = None) ->
         await session.close()
 
 
-async def test_ssh(harvester: Harvester, on_log: LogCallback | None = None) -> bool:
+async def test_ssh(
+    harvester: Harvester, on_log: LogCallback | None = None
+) -> tuple[bool, str | None]:
+    """Return (success, error_message). error_message is set on failure."""
     session = SshSession(harvester, on_log=on_log)
     try:
         await session.connect()
         _, stdout, _ = await session.run("hostname", check=True, timeout=30)
         if on_log:
             on_log(harvester.id, f"hostname: {stdout.strip()}")
-        return True
-    except Exception:
-        return False
+        return True, None
+    except Exception as exc:
+        return False, exc
     finally:
         await session.close()

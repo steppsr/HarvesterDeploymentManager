@@ -33,3 +33,7 @@ Update `config/harvesters.yaml` with new optional fields (`role`, `farmer_host`,
 
 - Git/source `deploy` still requires a clone at `chia_root`
 - Package-based farmers: use OS package manager or add a source clone for `deploy`
+
+## Note (v0.2.1+)
+
+The CLI console script was renamed from `harvester-deploy` to **`hdm`**. Re-run `pip install -e .` after upgrading. Phase 2 GUI will use **`harvest-deploy`** as its launcher.

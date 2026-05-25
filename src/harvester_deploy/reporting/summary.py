@@ -7,8 +7,7 @@ from pathlib import Path
 from harvester_deploy.domain.models import DeployJob, JobState
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+from harvester_deploy.persistence.paths import default_deployments_dir
 
 
 def _job_to_dict(job: DeployJob) -> dict:
@@ -37,7 +36,7 @@ def _job_to_dict(job: DeployJob) -> dict:
 
 def write_summary(jobs: list[DeployJob], *, dry_run: bool = False) -> Path:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    out_dir = _project_root() / "deployments" / ts
+    out_dir = default_deployments_dir() / ts
     out_dir.mkdir(parents=True, exist_ok=True)
 
     payload = {
@@ -53,4 +52,8 @@ def write_summary(jobs: list[DeployJob], *, dry_run: bool = False) -> Path:
 
     path = out_dir / "summary.json"
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    from harvester_deploy.persistence.history import record_deploy_run
+
+    record_deploy_run(jobs, dry_run=dry_run, json_path=path)
     return path
