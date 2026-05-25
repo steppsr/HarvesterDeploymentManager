@@ -1,4 +1,4 @@
-# Harvester Deployment Tool
+# Harvester Deployment Manager
 
 Deploy [Chia](https://www.chia.net/) upgrades from a **Windows 11** controller to **Ubuntu** machines on your local network over **SSH** — dedicated harvesters and your **farmer** node (e.g. JABBA). Use the **`hdm`** CLI for scripting or **`harvest-deploy`** for the desktop dashboard (Phase 2).
 
@@ -47,8 +47,8 @@ hdm status --target jabba
 ### 1. Clone the repository
 
 ```powershell
-git clone https://github.com/steppsr/HarvesterDeploymentTool.git
-cd HarvesterDeploymentTool
+git clone https://github.com/steppsr/HarvesterDeploymentManager.git
+cd HarvesterDeploymentManager
 ```
 
 ### 2. Create a virtual environment (recommended)
@@ -132,7 +132,7 @@ Output: `dist\HarvesterDeploymentManager.exe`. Run `python scripts\make_icon.py`
 
 The packaged `.exe` starts with **no predefined nodes**. To use an existing fleet file, choose **Fleet → Choose config file…** or **Manage inventory → Import from YAML…** and point at your `harvesters.yaml`.
 
-The release `.exe` does **not** embed `e:\DEV\HarvesterDeploymentTool`. To fully reset the installed app, delete the whole `%LOCALAPPDATA%\HarvesterDeploymentManager` folder, then start the exe again.
+The release `.exe` does **not** embed your local development path. To fully reset the installed app, delete the whole `%LOCALAPPDATA%\HarvesterDeploymentManager` folder, then start the exe again.
 
 ## SSH setup (one-time per harvester)
 
@@ -282,7 +282,7 @@ hdm status --quiet
 ## Project layout
 
 ```text
-HarvesterDeploymentTool/
+HarvesterDeploymentManager/
   config/
     harvesters.example.yaml   # committed template
     harvesters.yaml           # local only (gitignored)

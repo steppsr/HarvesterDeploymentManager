@@ -123,6 +123,6 @@ That folder contains `config\`, `data\`, `deployments\`, and `settings.yaml`.
 
 ## Links
 
-- Repository: https://github.com/steppsr/HarvesterDeploymentTool
-- README: https://github.com/steppsr/HarvesterDeploymentTool/blob/main/README.md
-- Architecture: https://github.com/steppsr/HarvesterDeploymentTool/blob/main/ARCHITECTURE.md
+- Repository: https://github.com/steppsr/HarvesterDeploymentManager
+- README: https://github.com/steppsr/HarvesterDeploymentManager/blob/main/README.md
+- Architecture: https://github.com/steppsr/HarvesterDeploymentManager/blob/main/ARCHITECTURE.md

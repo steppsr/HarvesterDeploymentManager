@@ -2,6 +2,8 @@
 
 Phase 1.5 release: safer upgrades, farmer node support, and package-install detection (e.g. `.deb` farmer on JABBA).
 
+**Repository:** https://github.com/steppsr/HarvesterDeploymentManager
+
 ## Highlights
 
 - **Skip when current** — `upgrade_check` skips deploy if already on `origin/latest` (`--force` to override)

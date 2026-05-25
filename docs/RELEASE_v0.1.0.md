@@ -4,7 +4,7 @@ First stable release of **Harvester Deployment Tool**: a Python CLI that upgrade
 
 Phase 1 delivers a repeatable deployment pipeline with fleet orchestration, live logging, and JSON run summaries. Validated on a six-harvester home lab (git-based upgrades to Chia `latest` / 2.7.1). A desktop GUI is planned for Phase 2.
 
-**License:** [Apache-2.0](https://github.com/steppsr/HarvesterDeploymentTool/blob/main/LICENSE)
+**License:** [Apache-2.0](https://github.com/steppsr/HarvesterDeploymentManager/blob/main/LICENSE)
 
 ## Highlights
 
@@ -27,8 +27,8 @@ Phase 1 delivers a repeatable deployment pipeline with fleet orchestration, live
 ## Installation
 
 ```powershell
-git clone https://github.com/steppsr/HarvesterDeploymentTool.git
-cd HarvesterDeploymentTool
+git clone https://github.com/steppsr/HarvesterDeploymentManager.git
+cd HarvesterDeploymentManager
 git checkout v0.1.0
 
 python -m venv .venv
@@ -44,7 +44,7 @@ Edit `config\harvesters.yaml`, then verify:
 harvester-deploy --help
 ```
 
-Full documentation: [README.md](https://github.com/steppsr/HarvesterDeploymentTool/blob/v0.1.0/README.md)
+Full documentation: [README.md](https://github.com/steppsr/HarvesterDeploymentManager/blob/v0.1.0/README.md)
 
 ## Quick start (recommended)
 
@@ -92,7 +92,7 @@ Steps run on each harvester in order:
 9. `start_harvester` - Run `chia start harvester`
 10. `postcheck` - Record `chia version` in the summary
 
-Manual reference: [How to Upgrade Chia.md](https://github.com/steppsr/HarvesterDeploymentTool/blob/v0.1.0/How%20to%20Upgrade%20Chia.md)
+Manual reference: [How to Upgrade Chia.md](https://github.com/steppsr/HarvesterDeploymentManager/blob/v0.1.0/How%20to%20Upgrade%20Chia.md)
 
 ## Dependencies
 
@@ -139,5 +139,5 @@ Manual reference: [How to Upgrade Chia.md](https://github.com/steppsr/HarvesterD
 
 ## Links
 
-- Repository: https://github.com/steppsr/HarvesterDeploymentTool
-- Report issues: https://github.com/steppsr/HarvesterDeploymentTool/issues
+- Repository: https://github.com/steppsr/HarvesterDeploymentManager
+- Report issues: https://github.com/steppsr/HarvesterDeploymentManager/issues

@@ -1,4 +1,4 @@
-# Chia Harvester Deployment Tool — Architecture
+# Harvester Deployment Manager — Architecture
 
 A modular, **Python-centric controller** on Windows 11 orchestrates **agentless SSH** upgrades on six Ubuntu harvesters on the local LAN. Phase 1 delivers a reusable library and CLI; Phase 2 adds a desktop GUI that reuses the same core—no rewrite.
 
@@ -430,7 +430,7 @@ assets/                # app icon assets
 ## Project layout (current)
 
 ```text
-HarvesterDeploymentTool/
+HarvesterDeploymentManager/
   pyproject.toml
   assets/                  # app icon source files
   config/
